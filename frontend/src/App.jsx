@@ -10,6 +10,71 @@ const CHUNK_MONTHS = 6;
 const EDGE_THRESHOLD = 10;
 const COLLAPSED_STRETCH = 0.0001;
 
+const THEME = {
+  light: {
+    pageBg: '#f5f6f8',
+    panelBg: 'rgba(255, 255, 255, 0.72)',
+    panelBorder: 'rgba(15, 23, 42, 0.08)',
+    text: '#0f172a',
+    textDim: '#1e293b',
+    btnBg: 'rgba(15, 23, 42, 0.04)',
+    btnBgHover: 'rgba(15, 23, 42, 0.09)',
+    btnBorder: 'rgba(15, 23, 42, 0.1)',
+    inputBg: 'rgba(255, 255, 255, 0.6)',
+    accent: '#3e5c76',
+    accentHover: '#33495e',
+    accentRing: 'rgba(62, 92, 118, 0.15)',
+    chartBg: '#ffffff',
+    chartText: '#333333',
+    gridColor: '#eeeeee',
+    separator: '#787b86',
+    separatorHover: 'rgba(120, 123, 134, 0.2)',
+  },
+  dark: {
+    pageBg: '#0d1117',
+    panelBg: 'rgba(22, 25, 32, 0.72)',
+    panelBorder: 'rgba(255, 255, 255, 0.08)',
+    text: '#e8eaed',
+    textDim: '#c3c9d1',
+    btnBg: 'rgba(255, 255, 255, 0.06)',
+    btnBgHover: 'rgba(255, 255, 255, 0.12)',
+    btnBorder: 'rgba(255, 255, 255, 0.12)',
+    inputBg: 'rgba(255, 255, 255, 0.05)',
+    accent: '#5b7ea3',
+    accentHover: '#6f93b6',
+    accentRing: 'rgba(91, 126, 163, 0.25)',
+    chartBg: '#0d1117',
+    chartText: '#c3c9d1',
+    gridColor: 'rgba(255, 255, 255, 0.06)',
+    separator: 'rgba(255, 255, 255, 0.15)',
+    separatorHover: 'rgba(255, 255, 255, 0.3)',
+  },
+};
+
+function SunIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4" />
+      <line x1="12" y1="2" x2="12" y2="4" />
+      <line x1="12" y1="20" x2="12" y2="22" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="2" y1="12" x2="4" y2="12" />
+      <line x1="20" y1="12" x2="22" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  );
+}
+
 function dateOf(row) {
   return row.Date.slice(0, 10);
 }
@@ -122,12 +187,15 @@ function App() {
   const seriesMapRef = useRef({});
   const [error, setError] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const [visibility, setVisibility] = useState(
     () => Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, true]))
   );
 
   const [symbol, setSymbol] = useState('THYAO');
   const [symbolInput, setSymbolInput] = useState('THYAO');
+
+  const t = darkMode ? THEME.dark : THEME.light;
 
   function handleSymbolSubmit(e) {
     e.preventDefault();
@@ -162,6 +230,17 @@ function App() {
     }
   }
 
+  function handleToggleAll() {
+    const allVisible = TOGGLE_GROUPS.every((g) => visibility[g.id]);
+    const target = !allVisible;
+    TOGGLE_GROUPS.forEach((group) => {
+      if (visibility[group.id] !== target) {
+        handleToggle(group.id);
+      }
+    });
+  }
+
+  // Chart creation / data loading — only reruns when the symbol changes.
   useEffect(() => {
     let chart;
     let cancelled = false;
@@ -223,15 +302,23 @@ function App() {
         const data = await fetchRange(symbol, start, end);
         if (cancelled) return;
 
+        const currentTheme = darkMode ? THEME.dark : THEME.light;
+
         chart = createChart(chartContainerRef.current, {
           width: chartContainerRef.current.clientWidth,
           height: chartContainerRef.current.clientHeight,
           layout: {
+            background: { color: currentTheme.chartBg },
+            textColor: currentTheme.chartText,
             panes: {
-              separatorColor: '#787b86',
-              separatorHoverColor: 'rgba(120, 123, 134, 0.2)',
+              separatorColor: currentTheme.separator,
+              separatorHoverColor: currentTheme.separatorHover,
               enableResize: true,
             },
+          },
+          grid: {
+            vertLines: { color: currentTheme.gridColor },
+            horzLines: { color: currentTheme.gridColor },
           },
         });
         chartRef.current = chart;
@@ -288,99 +375,199 @@ function App() {
       chartRef.current = null;
       seriesMapRef.current = {};
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
+  // Theme switch — repaints the existing chart in place, no refetch, no lost scroll history.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions({
+      layout: {
+        background: { color: t.chartBg },
+        textColor: t.chartText,
+        panes: {
+          separatorColor: t.separator,
+          separatorHoverColor: t.separatorHover,
+          enableResize: true,
+        },
+      },
+      grid: {
+        vertLines: { color: t.gridColor },
+        horzLines: { color: t.gridColor },
+      },
+    });
+  }, [darkMode]);
+
+  const allVisible = TOGGLE_GROUPS.every((g) => visibility[g.id]);
+
   return (
-    <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
+    <div
+      style={{
+        position: 'relative',
+        height: '100vh',
+        width: '100%',
+        overflow: 'hidden',
+        backgroundColor: t.pageBg,
+        '--panel-bg': t.panelBg,
+        '--panel-border': t.panelBorder,
+        '--text': t.text,
+        '--text-dim': t.textDim,
+        '--btn-bg': t.btnBg,
+        '--btn-bg-hover': t.btnBgHover,
+        '--btn-border': t.btnBorder,
+        '--input-bg': t.inputBg,
+        '--accent': t.accent,
+        '--accent-hover': t.accentHover,
+        '--accent-ring': t.accentRing,
+      }}
+    >
       <style>{`
         .stc-header {
-          background: rgba(255, 255, 255, 0.72);
+          background: var(--panel-bg);
           backdrop-filter: blur(14px) saturate(180%);
           -webkit-backdrop-filter: blur(14px) saturate(180%);
-          border: 1px solid rgba(15, 23, 42, 0.08);
+          border: 1px solid var(--panel-border);
           border-radius: 14px;
-          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
           padding: 10px 12px;
           display: flex;
           align-items: center;
           gap: 10px;
+          transition: background-color 200ms ease, border-color 200ms ease;
         }
         .stc-title {
           font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
           font-weight: 700;
           font-size: 15px;
           letter-spacing: 0.02em;
-          color: #0f172a;
+          color: var(--text);
           margin: 0;
           padding: 0 4px;
+          transition: color 200ms ease;
         }
         .stc-input {
           font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
           font-size: 13px;
-          border: 1px solid rgba(15, 23, 42, 0.12);
-          background: rgba(255, 255, 255, 0.6);
+          border: 1px solid var(--btn-border);
+          background: var(--input-bg);
+          color: var(--text);
           border-radius: 8px;
           padding: 7px 10px;
           width: 100px;
           outline: none;
-          transition: border-color 150ms ease, box-shadow 150ms ease;
+          transition: border-color 150ms ease, box-shadow 150ms ease, background-color 200ms ease, color 200ms ease;
         }
         .stc-input:focus {
-          border-color: #3e5c76;
-          box-shadow: 0 0 0 3px rgba(62, 92, 118, 0.15);
+          border-color: var(--accent);
+          box-shadow: 0 0 0 3px var(--accent-ring);
         }
         .stc-btn {
           font-family: ui-sans-serif, system-ui, sans-serif;
           font-size: 13px;
           font-weight: 500;
-          border: 1px solid rgba(15, 23, 42, 0.1);
-          background: rgba(15, 23, 42, 0.04);
-          color: #0f172a;
+          border: 1px solid var(--btn-border);
+          background: var(--btn-bg);
+          color: var(--text);
           border-radius: 8px;
           padding: 7px 14px;
           cursor: pointer;
-          transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+          transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease, color 200ms ease;
         }
         .stc-btn:hover {
-          background: rgba(15, 23, 42, 0.09);
+          background: var(--btn-bg-hover);
           transform: translateY(-1px);
-          box-shadow: 0 3px 8px rgba(15, 23, 42, 0.1);
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
         }
         .stc-btn:active {
           transform: translateY(0);
         }
         .stc-btn-primary {
-          background: #3e5c76;
-          border-color: #3e5c76;
+          background: var(--accent);
+          border-color: var(--accent);
           color: white;
         }
         .stc-btn-primary:hover {
-          background: #33495e;
-          box-shadow: 0 4px 10px rgba(62, 92, 118, 0.3);
+          background: var(--accent-hover);
+          box-shadow: 0 4px 10px var(--accent-ring);
+        }
+        .stc-theme-toggle {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          border: 1px solid var(--btn-border);
+          background: var(--btn-bg);
+          color: var(--text);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          padding: 0;
+          transition: background-color 150ms ease, transform 200ms ease, box-shadow 150ms ease, color 200ms ease;
+        }
+        .stc-theme-toggle:hover {
+          background: var(--btn-bg-hover);
+          transform: translateY(-1px) rotate(20deg);
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+        }
+        .stc-toggle-all {
+          font-family: ui-sans-serif, system-ui, sans-serif;
+          font-size: 22px;
+          font-weight: 600;
+          border: 1px solid var(--btn-border);
+          background: var(--btn-bg);
+          color: var(--text);
+          border-radius: 10px;
+          padding: 12px 18px;
+          cursor: pointer;
+          transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+          margin-bottom: 10px;
+          width: 100%;
+        }
+        .stc-toggle-all:hover {
+          background: var(--btn-bg-hover);
+          transform: translateY(-1px);
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
         }
         .stc-checkbox-row {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 16px;
           font-family: ui-sans-serif, system-ui, sans-serif;
-          font-size: 13.5px;
-          color: #1e293b;
-          padding: 5px 6px;
-          border-radius: 6px;
+          font-size: 27px;
+          color: var(--text-dim);
+          padding: 10px 12px;
+          border-radius: 8px;
           cursor: pointer;
-          transition: background-color 120ms ease;
+          transition: background-color 120ms ease, color 200ms ease;
         }
         .stc-checkbox-row:hover {
-          background: rgba(15, 23, 42, 0.05);
+          background: var(--btn-bg-hover);
+        }
+        .stc-checkbox-row input[type="checkbox"] {
+          width: 22px;
+          height: 22px;
+          cursor: pointer;
+          accent-color: var(--accent);
         }
         @media (prefers-reduced-motion: reduce) {
-          .stc-btn, .stc-input { transition: none; }
-          .stc-btn:hover { transform: none; }
+          .stc-btn, .stc-input, .stc-toggle-all, .stc-theme-toggle { transition: none; }
+          .stc-btn:hover, .stc-toggle-all:hover, .stc-theme-toggle:hover { transform: none; }
         }
       `}</style>
 
       <div className="stc-header" style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 20 }}>
-        <h2 className="stc-title">{symbol}</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+          <h2 className="stc-title">{symbol}</h2>
+          <button
+            className="stc-theme-toggle"
+            onClick={() => setDarkMode((d) => !d)}
+            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {darkMode ? <MoonIcon /> : <SunIcon />}
+          </button>
+        </div>
 
         <form onSubmit={handleSymbolSubmit} style={{ display: 'inline-flex', gap: '6px' }}>
           <input
@@ -406,9 +593,13 @@ function App() {
             flexDirection: 'column',
             alignItems: 'stretch',
             gap: '2px',
-            padding: '8px',
+            padding: '14px',
           }}
         >
+          <button className="stc-toggle-all" onClick={handleToggleAll}>
+            {allVisible ? 'Hide all' : 'Show all'}
+          </button>
+
           {TOGGLE_GROUPS.map((group) => (
             <label key={group.id} className="stc-checkbox-row">
               <input
