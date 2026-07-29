@@ -6,10 +6,9 @@ import {
   HistogramSeries,
 } from 'lightweight-charts';
 
-const SYMBOL = 'THYAO';
 const CHUNK_MONTHS = 6;
 const EDGE_THRESHOLD = 10;
-const TOTAL_HEIGHT = 1300;
+const COLLAPSED_STRETCH = 0.0001;
 
 function dateOf(row) {
   return row.Date.slice(0, 10);
@@ -61,9 +60,6 @@ function supertrendDownData(rows) {
   );
 }
 
-// Single source of truth for every series: which pane it lives in, how it's
-// styled, and how to derive its data from the raw rows. init() and
-// loadMoreHistory() both read from this list, so there is no duplicated logic.
 const SERIES_CONFIG = [
   { key: 'candle', pane: 0, type: CandlestickSeries, options: {}, data: (rows) => rows.map(toCandleFormat) },
   { key: 'sma20', pane: 0, type: LineSeries, options: { color: '#eda100', lineWidth: 2, title: 'SMA20' }, data: (rows) => lineData(rows, 'SMA_20') },
@@ -95,9 +91,6 @@ const SERIES_CONFIG = [
 
 const PANE_STRETCH = { 0: 3, 1: 1, 2: 1.2, 3: 1.2, 4: 1.2, 5: 1, 6: 1, 7: 1 };
 
-// Groups the individual series into the checkboxes shown in the Indicators
-// panel. One checkbox can control several series at once (e.g. all three
-// Bollinger Band lines share one toggle).
 const TOGGLE_GROUPS = [
   { id: 'sma20', label: 'SMA 20', keys: ['sma20'] },
   { id: 'ema12', label: 'EMA 12', keys: ['ema12'] },
@@ -113,6 +106,8 @@ const TOGGLE_GROUPS = [
   { id: 'obv', label: 'OBV', keys: ['obv'] },
 ];
 
+const GROUP_PANE = { volume: 1, rsi: 2, macd: 3, stoch: 4, adx: 5, atr: 6, obv: 7 };
+
 async function fetchRange(symbol, start, end) {
   const toISO = (d) => d.toISOString().slice(0, 10);
   const url = `http://127.0.0.1:8000/api/price/${symbol}?start=${toISO(start)}&end=${toISO(end)}`;
@@ -123,12 +118,22 @@ async function fetchRange(symbol, start, end) {
 
 function App() {
   const chartContainerRef = useRef(null);
+  const chartRef = useRef(null);
   const seriesMapRef = useRef({});
   const [error, setError] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [visibility, setVisibility] = useState(
     () => Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, true]))
   );
+
+  const [symbol, setSymbol] = useState('THYAO');
+  const [symbolInput, setSymbolInput] = useState('THYAO');
+
+  function handleSymbolSubmit(e) {
+    e.preventDefault();
+    const trimmed = symbolInput.trim().toUpperCase();
+    if (trimmed) setSymbol(trimmed);
+  }
 
   function handleToggle(groupId) {
     const nextVisible = !visibility[groupId];
@@ -138,6 +143,23 @@ function App() {
     group.keys.forEach((key) => {
       seriesMapRef.current[key]?.applyOptions({ visible: nextVisible });
     });
+
+    const paneIndex = GROUP_PANE[groupId];
+    const chart = chartRef.current;
+    if (paneIndex === undefined || !chart) return;
+
+    const panes = chart.panes();
+    const targetPane = panes[paneIndex];
+    const mainPane = panes[0];
+    if (!targetPane || !mainPane) return;
+
+    if (nextVisible) {
+      targetPane.setStretchFactor(PANE_STRETCH[paneIndex]);
+      mainPane.setStretchFactor(mainPane.getStretchFactor() - PANE_STRETCH[paneIndex]);
+    } else {
+      targetPane.setStretchFactor(COLLAPSED_STRETCH);
+      mainPane.setStretchFactor(mainPane.getStretchFactor() + PANE_STRETCH[paneIndex]);
+    }
   }
 
   useEffect(() => {
@@ -165,7 +187,7 @@ function App() {
       newStart.setMonth(newStart.getMonth() - CHUNK_MONTHS);
 
       try {
-        const older = await fetchRange(SYMBOL, newStart, newEnd);
+        const older = await fetchRange(symbol, newStart, newEnd);
         if (cancelled) return;
 
         if (older.length === 0) {
@@ -193,17 +215,26 @@ function App() {
 
     async function init() {
       try {
+        setError(null);
         const end = new Date();
         const start = new Date();
         start.setMonth(start.getMonth() - CHUNK_MONTHS);
 
-        const data = await fetchRange(SYMBOL, start, end);
+        const data = await fetchRange(symbol, start, end);
         if (cancelled) return;
 
         chart = createChart(chartContainerRef.current, {
           width: chartContainerRef.current.clientWidth,
-          height: TOTAL_HEIGHT,
+          height: chartContainerRef.current.clientHeight,
+          layout: {
+            panes: {
+              separatorColor: '#787b86',
+              separatorHoverColor: 'rgba(120, 123, 134, 0.2)',
+              enableResize: true,
+            },
+          },
         });
+        chartRef.current = chart;
 
         SERIES_CONFIG.forEach(({ key, pane, type, options }) => {
           seriesMapRef.current[key] = chart.addSeries(type, options, pane);
@@ -233,7 +264,10 @@ function App() {
 
         const resizeObserver = new ResizeObserver((entries) => {
           if (chart && entries[0]) {
-            chart.applyOptions({ width: entries[0].contentRect.width });
+            chart.applyOptions({
+              width: entries[0].contentRect.width,
+              height: entries[0].contentRect.height,
+            });
           }
         });
         resizeObserver.observe(chartContainerRef.current);
@@ -251,38 +285,136 @@ function App() {
         chart._cleanupResizeObserver?.();
         chart.remove();
       }
+      chartRef.current = null;
       seriesMapRef.current = {};
     };
-  }, []);
+  }, [symbol]);
 
   return (
-    <div style={{ padding: '12px', boxSizing: 'border-box', position: 'relative' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-        <h2 style={{ margin: 0 }}>{SYMBOL}</h2>
-        <button onClick={() => setPanelOpen((open) => !open)}>Indicators</button>
+    <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
+      <style>{`
+        .stc-header {
+          background: rgba(255, 255, 255, 0.72);
+          backdrop-filter: blur(14px) saturate(180%);
+          -webkit-backdrop-filter: blur(14px) saturate(180%);
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 14px;
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+          padding: 10px 12px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .stc-title {
+          font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+          font-weight: 700;
+          font-size: 15px;
+          letter-spacing: 0.02em;
+          color: #0f172a;
+          margin: 0;
+          padding: 0 4px;
+        }
+        .stc-input {
+          font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+          font-size: 13px;
+          border: 1px solid rgba(15, 23, 42, 0.12);
+          background: rgba(255, 255, 255, 0.6);
+          border-radius: 8px;
+          padding: 7px 10px;
+          width: 100px;
+          outline: none;
+          transition: border-color 150ms ease, box-shadow 150ms ease;
+        }
+        .stc-input:focus {
+          border-color: #3e5c76;
+          box-shadow: 0 0 0 3px rgba(62, 92, 118, 0.15);
+        }
+        .stc-btn {
+          font-family: ui-sans-serif, system-ui, sans-serif;
+          font-size: 13px;
+          font-weight: 500;
+          border: 1px solid rgba(15, 23, 42, 0.1);
+          background: rgba(15, 23, 42, 0.04);
+          color: #0f172a;
+          border-radius: 8px;
+          padding: 7px 14px;
+          cursor: pointer;
+          transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+        }
+        .stc-btn:hover {
+          background: rgba(15, 23, 42, 0.09);
+          transform: translateY(-1px);
+          box-shadow: 0 3px 8px rgba(15, 23, 42, 0.1);
+        }
+        .stc-btn:active {
+          transform: translateY(0);
+        }
+        .stc-btn-primary {
+          background: #3e5c76;
+          border-color: #3e5c76;
+          color: white;
+        }
+        .stc-btn-primary:hover {
+          background: #33495e;
+          box-shadow: 0 4px 10px rgba(62, 92, 118, 0.3);
+        }
+        .stc-checkbox-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-family: ui-sans-serif, system-ui, sans-serif;
+          font-size: 13.5px;
+          color: #1e293b;
+          padding: 5px 6px;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: background-color 120ms ease;
+        }
+        .stc-checkbox-row:hover {
+          background: rgba(15, 23, 42, 0.05);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .stc-btn, .stc-input { transition: none; }
+          .stc-btn:hover { transform: none; }
+        }
+      `}</style>
+
+      <div className="stc-header" style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 20 }}>
+        <h2 className="stc-title">{symbol}</h2>
+
+        <form onSubmit={handleSymbolSubmit} style={{ display: 'inline-flex', gap: '6px' }}>
+          <input
+            className="stc-input"
+            value={symbolInput}
+            onChange={(e) => setSymbolInput(e.target.value)}
+            placeholder="e.g. GARAN"
+          />
+          <button type="submit" className="stc-btn stc-btn-primary">Load</button>
+        </form>
+
+        <button className="stc-btn" onClick={() => setPanelOpen((open) => !open)}>Indicators</button>
       </div>
 
       {panelOpen && (
         <div
+          className="stc-header"
           style={{
             position: 'absolute',
-            top: '48px',
-            left: '12px',
-            zIndex: 10,
-            background: 'white',
-            border: '1px solid #ccc',
-            borderRadius: '6px',
-            padding: '10px 14px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            top: '68px',
+            left: '16px',
+            zIndex: 20,
+            flexDirection: 'column',
+            alignItems: 'stretch',
+            gap: '2px',
+            padding: '8px',
           }}
         >
           {TOGGLE_GROUPS.map((group) => (
-            <label key={group.id} style={{ display: 'block', fontSize: '14px', padding: '3px 0' }}>
+            <label key={group.id} className="stc-checkbox-row">
               <input
                 type="checkbox"
                 checked={visibility[group.id]}
                 onChange={() => handleToggle(group.id)}
-                style={{ marginRight: '8px' }}
               />
               {group.label}
             </label>
@@ -290,8 +422,13 @@ function App() {
         </div>
       )}
 
-      {error && <p style={{ color: 'red' }}>Error: {error}</p>}
-      <div ref={chartContainerRef} style={{ width: '100%', height: `${TOTAL_HEIGHT}px` }} />
+      {error && (
+        <p style={{ position: 'absolute', top: '68px', left: '16px', zIndex: 20, color: '#ef5350' }}>
+          Error: {error}
+        </p>
+      )}
+
+      <div ref={chartContainerRef} style={{ width: '100%', height: '100%' }} />
     </div>
   );
 }
