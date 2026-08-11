@@ -4,7 +4,9 @@ import {
   CandlestickSeries,
   LineSeries,
   HistogramSeries,
+  CrosshairMode,
 } from 'lightweight-charts';
+import { TrendLinePrimitive, RectanglePrimitive, HorizontalLinePrimitive } from './drawingTools.js';
 
 const CHUNK_MONTHS = 6;
 const EDGE_THRESHOLD = 10;
@@ -173,6 +175,12 @@ const TOGGLE_GROUPS = [
 
 const GROUP_PANE = { volume: 1, rsi: 2, macd: 3, stoch: 4, adx: 5, atr: 6, obv: 7 };
 
+const DRAWING_TOOLS = [
+  { id: 'horizontal', label: 'Horizontal Line', clicksNeeded: 1 },
+  { id: 'trendline', label: 'Trend Line', clicksNeeded: 2 },
+  { id: 'rectangle', label: 'Rectangle', clicksNeeded: 2 },
+];
+
 async function fetchRange(symbol, start, end) {
   const toISO = (d) => d.toISOString().slice(0, 10);
   const url = `http://127.0.0.1:8000/api/price/${symbol}?start=${toISO(start)}&end=${toISO(end)}`;
@@ -195,7 +203,17 @@ function App() {
   const [symbol, setSymbol] = useState('THYAO');
   const [symbolInput, setSymbolInput] = useState('THYAO');
 
+  const [activeTool, setActiveTool] = useState(null);
+  const activeToolRef = useRef(null);
+  const pendingPointRef = useRef(null);
+  const drawingsRef = useRef([]);
+  const previewPrimitiveRef = useRef(null);
+
   const t = darkMode ? THEME.dark : THEME.light;
+
+  useEffect(() => {
+    activeToolRef.current = activeTool;
+  }, [activeTool]);
 
   function handleSymbolSubmit(e) {
     e.preventDefault();
@@ -238,6 +256,87 @@ function App() {
         handleToggle(group.id);
       }
     });
+  }
+
+  function handleSelectTool(toolId) {
+    pendingPointRef.current = null;
+    const series = seriesMapRef.current.candle;
+    if (previewPrimitiveRef.current && series) {
+      series.detachPrimitive(previewPrimitiveRef.current);
+      previewPrimitiveRef.current = null;
+    }
+    setActiveTool((current) => (current === toolId ? null : toolId));
+  }
+
+  function handleClearDrawings() {
+    const series = seriesMapRef.current.candle;
+    if (series) {
+      drawingsRef.current.forEach((primitive) => series.detachPrimitive(primitive));
+    }
+    drawingsRef.current = [];
+  }
+
+  function handleChartClick(param) {
+    const tool = activeToolRef.current;
+    if (!tool || !param.point || !param.time) return;
+
+    const series = seriesMapRef.current.candle;
+    const chart = chartRef.current;
+    if (!series || !chart) return;
+
+    const price = series.coordinateToPrice(param.point.y);
+    if (price === null) return; // click landed outside the main price pane
+
+    if (tool === 'horizontal') {
+      const primitive = new HorizontalLinePrimitive(price);
+      series.attachPrimitive(primitive);
+      drawingsRef.current.push(primitive);
+      setActiveTool(null);
+      return;
+    }
+
+    if (!pendingPointRef.current) {
+      pendingPointRef.current = { time: param.time, price };
+      return;
+    }
+
+    const p1 = pendingPointRef.current;
+    const p2 = { time: param.time, price };
+    pendingPointRef.current = null;
+
+    if (previewPrimitiveRef.current) {
+      series.detachPrimitive(previewPrimitiveRef.current);
+      previewPrimitiveRef.current = null;
+    }
+
+    const primitive =
+      tool === 'trendline' ? new TrendLinePrimitive(p1, p2) : new RectanglePrimitive(p1, p2);
+    series.attachPrimitive(primitive);
+    drawingsRef.current.push(primitive);
+    setActiveTool(null);
+  }
+
+  function handleCrosshairMove(param) {
+    const tool = activeToolRef.current;
+    if (!pendingPointRef.current || (tool !== 'trendline' && tool !== 'rectangle')) return;
+    if (!param.point || !param.time) return;
+
+    const series = seriesMapRef.current.candle;
+    if (!series) return;
+    const price = series.coordinateToPrice(param.point.y);
+    if (price === null) return;
+
+    const p1 = pendingPointRef.current;
+    const p2 = { time: param.time, price };
+
+    if (!previewPrimitiveRef.current) {
+      const PrimitiveClass = tool === 'trendline' ? TrendLinePrimitive : RectanglePrimitive;
+      const preview = new PrimitiveClass(p1, p2, { preview: true });
+      series.attachPrimitive(preview);
+      previewPrimitiveRef.current = preview;
+    } else {
+      previewPrimitiveRef.current.setSecondPoint(p2);
+    }
   }
 
   // Chart creation / data loading — only reruns when the symbol changes.
@@ -320,6 +419,9 @@ function App() {
             vertLines: { color: currentTheme.gridColor },
             horzLines: { color: currentTheme.gridColor },
           },
+          crosshair: {
+            mode: CrosshairMode.Normal,
+          },
         });
         chartRef.current = chart;
 
@@ -349,6 +451,9 @@ function App() {
           }
         });
 
+        chart.subscribeClick(handleChartClick);
+        chart.subscribeCrosshairMove(handleCrosshairMove);
+
         const resizeObserver = new ResizeObserver((entries) => {
           if (chart && entries[0]) {
             chart.applyOptions({
@@ -374,6 +479,10 @@ function App() {
       }
       chartRef.current = null;
       seriesMapRef.current = {};
+      drawingsRef.current = [];
+      pendingPointRef.current = null;
+      previewPrimitiveRef.current = null;
+      setActiveTool(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
@@ -491,6 +600,11 @@ function App() {
           background: var(--accent-hover);
           box-shadow: 0 4px 10px var(--accent-ring);
         }
+        .stc-btn-active {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: white;
+        }
         .stc-theme-toggle {
           width: 30px;
           height: 30px;
@@ -582,6 +696,19 @@ function App() {
         <button className="stc-btn" onClick={() => setPanelOpen((open) => !open)}>Indicators</button>
       </div>
 
+      <div className="stc-header" style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 20 }}>
+        {DRAWING_TOOLS.map((tool) => (
+          <button
+            key={tool.id}
+            className={`stc-btn ${activeTool === tool.id ? 'stc-btn-active' : ''}`}
+            onClick={() => handleSelectTool(tool.id)}
+          >
+            {tool.label}
+          </button>
+        ))}
+        <button className="stc-btn" onClick={handleClearDrawings}>Clear</button>
+      </div>
+
       {panelOpen && (
         <div
           className="stc-header"
@@ -619,7 +746,10 @@ function App() {
         </p>
       )}
 
-      <div ref={chartContainerRef} style={{ width: '100%', height: '100%' }} />
+      <div
+        ref={chartContainerRef}
+        style={{ width: '100%', height: '100%', cursor: activeTool ? 'crosshair' : 'default' }}
+      />
     </div>
   );
 }
