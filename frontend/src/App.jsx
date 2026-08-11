@@ -209,6 +209,10 @@ function App() {
   const drawingsRef = useRef([]);
   const previewPrimitiveRef = useRef(null);
 
+  const [selectedDrawing, setSelectedDrawing] = useState(null);
+  const selectedDrawingRef = useRef(null);
+  const [selectedExtend, setSelectedExtend] = useState({ left: false, right: false });
+
   const t = darkMode ? THEME.dark : THEME.light;
 
   useEffect(() => {
@@ -258,6 +262,15 @@ function App() {
     });
   }
 
+  function clearSelection() {
+    if (selectedDrawingRef.current) {
+      selectedDrawingRef.current.setSelected(false);
+    }
+    selectedDrawingRef.current = null;
+    setSelectedDrawing(null);
+    setSelectedExtend({ left: false, right: false });
+  }
+
   function handleSelectTool(toolId) {
     pendingPointRef.current = null;
     const series = seriesMapRef.current.candle;
@@ -265,6 +278,7 @@ function App() {
       series.detachPrimitive(previewPrimitiveRef.current);
       previewPrimitiveRef.current = null;
     }
+    clearSelection();
     setActiveTool((current) => (current === toolId ? null : toolId));
   }
 
@@ -274,18 +288,61 @@ function App() {
       drawingsRef.current.forEach((primitive) => series.detachPrimitive(primitive));
     }
     drawingsRef.current = [];
+    clearSelection();
+  }
+
+  function handleSelectDrawing(x, y) {
+    const hit = [...drawingsRef.current].reverse().find((d) => d.hitTest(x, y));
+
+    if (selectedDrawingRef.current && selectedDrawingRef.current !== hit) {
+      selectedDrawingRef.current.setSelected(false);
+    }
+    if (hit) hit.setSelected(true);
+
+    selectedDrawingRef.current = hit || null;
+    setSelectedDrawing(hit || null);
+    setSelectedExtend(hit && typeof hit.getExtend === 'function' ? hit.getExtend() : { left: false, right: false });
+  }
+
+  function handleDeleteSelected() {
+    const series = seriesMapRef.current.candle;
+    const selected = selectedDrawingRef.current;
+    if (!selected || !series) return;
+
+    series.detachPrimitive(selected);
+    drawingsRef.current = drawingsRef.current.filter((d) => d !== selected);
+    selectedDrawingRef.current = null;
+    setSelectedDrawing(null);
+    setSelectedExtend({ left: false, right: false });
+  }
+
+  function handleToggleExtend(side) {
+    const selected = selectedDrawingRef.current;
+    if (!selected || typeof selected.getExtend !== 'function') return;
+
+    const current = selected.getExtend();
+    if (side === 'left') {
+      selected.setExtendLeft(!current.left);
+    } else {
+      selected.setExtendRight(!current.right);
+    }
+    setSelectedExtend(selected.getExtend());
   }
 
   function handleChartClick(param) {
     const tool = activeToolRef.current;
-    if (!tool || !param.point || !param.time) return;
-
     const series = seriesMapRef.current.candle;
     const chart = chartRef.current;
-    if (!series || !chart) return;
+    if (!series || !chart || !param.point) return;
 
+    if (!tool) {
+      handleSelectDrawing(param.point.x, param.point.y);
+      return;
+    }
+
+    if (!param.time) return;
     const price = series.coordinateToPrice(param.point.y);
-    if (price === null) return; // click landed outside the main price pane
+    if (price === null) return;
 
     if (tool === 'horizontal') {
       const primitive = new HorizontalLinePrimitive(price);
@@ -339,7 +396,19 @@ function App() {
     }
   }
 
-  // Chart creation / data loading — only reruns when the symbol changes.
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+      if (!selectedDrawingRef.current) return;
+      e.preventDefault();
+      handleDeleteSelected();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   useEffect(() => {
     let chart;
     let cancelled = false;
@@ -482,12 +551,14 @@ function App() {
       drawingsRef.current = [];
       pendingPointRef.current = null;
       previewPrimitiveRef.current = null;
+      selectedDrawingRef.current = null;
+      setSelectedDrawing(null);
+      setSelectedExtend({ left: false, right: false });
       setActiveTool(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
-  // Theme switch — repaints the existing chart in place, no refetch, no lost scroll history.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -509,6 +580,7 @@ function App() {
   }, [darkMode]);
 
   const allVisible = TOGGLE_GROUPS.every((g) => visibility[g.id]);
+  const canExtend = selectedDrawing && typeof selectedDrawing.getExtend === 'function';
 
   return (
     <div
@@ -590,6 +662,12 @@ function App() {
         }
         .stc-btn:active {
           transform: translateY(0);
+        }
+        .stc-btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
         }
         .stc-btn-primary {
           background: var(--accent);
@@ -706,6 +784,25 @@ function App() {
             {tool.label}
           </button>
         ))}
+
+        <button
+          className={`stc-btn ${selectedExtend.left ? 'stc-btn-active' : ''}`}
+          onClick={() => handleToggleExtend('left')}
+          disabled={!canExtend}
+        >
+          Extend Left
+        </button>
+        <button
+          className={`stc-btn ${selectedExtend.right ? 'stc-btn-active' : ''}`}
+          onClick={() => handleToggleExtend('right')}
+          disabled={!canExtend}
+        >
+          Extend Right
+        </button>
+
+        <button className="stc-btn" onClick={handleDeleteSelected} disabled={!selectedDrawing}>
+          Delete selected
+        </button>
         <button className="stc-btn" onClick={handleClearDrawings}>Clear</button>
       </div>
 
