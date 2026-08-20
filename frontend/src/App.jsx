@@ -10,7 +10,7 @@ import { TrendLinePrimitive, RectanglePrimitive, HorizontalLinePrimitive } from 
 
 const CHUNK_MONTHS = 6;
 const EDGE_THRESHOLD = 10;
-const COLLAPSED_STRETCH = 0.0001;
+const MAIN_PANE_STRETCH = 3;
 
 const THEME = {
   light: {
@@ -127,53 +127,91 @@ function supertrendDownData(rows) {
   );
 }
 
-const SERIES_CONFIG = [
-  { key: 'candle', pane: 0, type: CandlestickSeries, options: {}, data: (rows) => rows.map(toCandleFormat) },
-  { key: 'sma20', pane: 0, type: LineSeries, options: { color: '#eda100', lineWidth: 2, title: 'SMA20' }, data: (rows) => lineData(rows, 'SMA_20') },
-  { key: 'ema12', pane: 0, type: LineSeries, options: { color: '#4a90d9', lineWidth: 1, title: 'EMA12' }, data: (rows) => lineData(rows, 'EMA_12') },
-  { key: 'bbUpper', pane: 0, type: LineSeries, options: { color: 'rgba(150,150,150,0.7)', lineWidth: 1, title: 'BB Upper' }, data: (rows) => lineData(rows, 'BB_Upper') },
-  { key: 'bbMiddle', pane: 0, type: LineSeries, options: { color: 'rgba(150,150,150,0.4)', lineWidth: 1, lineStyle: 2, title: 'BB Middle' }, data: (rows) => lineData(rows, 'BB_Middle') },
-  { key: 'bbLower', pane: 0, type: LineSeries, options: { color: 'rgba(150,150,150,0.7)', lineWidth: 1, title: 'BB Lower' }, data: (rows) => lineData(rows, 'BB_Lower') },
-  { key: 'vwap', pane: 0, type: LineSeries, options: { color: '#a259d9', lineWidth: 1, title: 'VWAP' }, data: (rows) => lineData(rows, 'VWAP') },
-  { key: 'supertrendUp', pane: 0, type: LineSeries, options: { color: '#26a69a', lineWidth: 2, title: 'Supertrend' }, data: supertrendUpData },
-  { key: 'supertrendDown', pane: 0, type: LineSeries, options: { color: '#ef5350', lineWidth: 2 }, data: supertrendDownData },
-
-  { key: 'volume', pane: 1, type: HistogramSeries, options: { priceFormat: { type: 'volume' } }, data: volumeData },
-
-  { key: 'rsi', pane: 2, type: LineSeries, options: { color: '#a67bd6', lineWidth: 1.5, title: 'RSI14' }, data: (rows) => lineData(rows, 'RSI_14') },
-
-  { key: 'macd', pane: 3, type: LineSeries, options: { color: '#2a78d6', lineWidth: 1.5, title: 'MACD' }, data: (rows) => lineData(rows, 'MACD') },
-  { key: 'macdSignal', pane: 3, type: LineSeries, options: { color: '#eda100', lineWidth: 1.5, title: 'Signal' }, data: (rows) => lineData(rows, 'MACD_Signal') },
-  { key: 'macdHist', pane: 3, type: HistogramSeries, options: {}, data: macdHistData },
-
-  { key: 'stochK', pane: 4, type: LineSeries, options: { color: '#2a78d6', lineWidth: 1.5, title: '%K' }, data: (rows) => lineData(rows, 'Stoch_K') },
-  { key: 'stochD', pane: 4, type: LineSeries, options: { color: '#eda100', lineWidth: 1.5, title: '%D' }, data: (rows) => lineData(rows, 'Stoch_D') },
-
-  { key: 'adx', pane: 5, type: LineSeries, options: { color: '#52514e', lineWidth: 1.5, title: 'ADX14' }, data: (rows) => lineData(rows, 'ADX_14') },
-
-  { key: 'atr', pane: 6, type: LineSeries, options: { color: '#d9822b', lineWidth: 1.5, title: 'ATR14' }, data: (rows) => lineData(rows, 'ATR_14') },
-
-  { key: 'obv', pane: 7, type: LineSeries, options: { color: '#3d8c5f', lineWidth: 1.5, title: 'OBV' }, data: (rows) => lineData(rows, 'OBV') },
+// Series that live directly on the main price pane (pane 0) — these never
+// disappear, toggling them just flips `visible`, no pane management needed.
+const PANE0_SERIES = [
+  { key: 'candle', type: CandlestickSeries, options: {}, data: (rows) => rows.map(toCandleFormat) },
+  { key: 'sma20', type: LineSeries, options: { color: '#eda100', lineWidth: 2, title: 'SMA20' }, data: (rows) => lineData(rows, 'SMA_20') },
+  { key: 'ema12', type: LineSeries, options: { color: '#4a90d9', lineWidth: 1, title: 'EMA12' }, data: (rows) => lineData(rows, 'EMA_12') },
+  { key: 'bbUpper', type: LineSeries, options: { color: 'rgba(150,150,150,0.7)', lineWidth: 1, title: 'BB Upper' }, data: (rows) => lineData(rows, 'BB_Upper') },
+  { key: 'bbMiddle', type: LineSeries, options: { color: 'rgba(150,150,150,0.4)', lineWidth: 1, lineStyle: 2, title: 'BB Middle' }, data: (rows) => lineData(rows, 'BB_Middle') },
+  { key: 'bbLower', type: LineSeries, options: { color: 'rgba(150,150,150,0.7)', lineWidth: 1, title: 'BB Lower' }, data: (rows) => lineData(rows, 'BB_Lower') },
+  { key: 'vwap', type: LineSeries, options: { color: '#a259d9', lineWidth: 1, title: 'VWAP' }, data: (rows) => lineData(rows, 'VWAP') },
+  { key: 'supertrendUp', type: LineSeries, options: { color: '#26a69a', lineWidth: 2, title: 'Supertrend' }, data: supertrendUpData },
+  { key: 'supertrendDown', type: LineSeries, options: { color: '#ef5350', lineWidth: 2 }, data: supertrendDownData },
 ];
 
-const PANE_STRETCH = { 0: 3, 1: 1, 2: 1.2, 3: 1.2, 4: 1.2, 5: 1, 6: 1, 7: 1 };
-
-const TOGGLE_GROUPS = [
+// Overlay toggle groups (share pane 0 with the candles — simple show/hide).
+const OVERLAY_GROUPS = [
   { id: 'sma20', label: 'SMA 20', keys: ['sma20'] },
   { id: 'ema12', label: 'EMA 12', keys: ['ema12'] },
   { id: 'bb', label: 'Bollinger Bands', keys: ['bbUpper', 'bbMiddle', 'bbLower'] },
   { id: 'vwap', label: 'VWAP', keys: ['vwap'] },
   { id: 'supertrend', label: 'Supertrend', keys: ['supertrendUp', 'supertrendDown'] },
-  { id: 'volume', label: 'Volume', keys: ['volume'] },
-  { id: 'rsi', label: 'RSI', keys: ['rsi'] },
-  { id: 'macd', label: 'MACD', keys: ['macd', 'macdSignal', 'macdHist'] },
-  { id: 'stoch', label: 'Stochastic', keys: ['stochK', 'stochD'] },
-  { id: 'adx', label: 'ADX', keys: ['adx'] },
-  { id: 'atr', label: 'ATR', keys: ['atr'] },
-  { id: 'obv', label: 'OBV', keys: ['obv'] },
 ];
 
-const GROUP_PANE = { volume: 1, rsi: 2, macd: 3, stoch: 4, adx: 5, atr: 6, obv: 7 };
+// Groups that get their OWN dedicated pane. This array's order is the fixed
+// visual stacking order. When a group is hidden, its pane is fully removed
+// (chart.removePane) rather than just shrunk — no dead space left behind.
+// When any of these toggle, ALL currently-visible dedicated panes are torn
+// down and rebuilt from scratch in this order, which keeps pane indices
+// simple (always contiguous 1..N) instead of tracking shifting indices.
+const DEDICATED_GROUPS = [
+  {
+    id: 'volume', label: 'Volume', stretch: 1,
+    series: [{ key: 'volume', type: HistogramSeries, options: { priceFormat: { type: 'volume' } }, data: volumeData }],
+  },
+  {
+    id: 'rsi', label: 'RSI', stretch: 1.2,
+    series: [{ key: 'rsi', type: LineSeries, options: { color: '#a67bd6', lineWidth: 1.5, title: 'RSI14' }, data: (rows) => lineData(rows, 'RSI_14') }],
+    priceLines: [
+      { price: 70, color: '#e5484d', lineStyle: 2, lineWidth: 1, title: '70' },
+      { price: 30, color: '#3ddc84', lineStyle: 2, lineWidth: 1, title: '30' },
+    ],
+    priceLineTargetKey: 'rsi',
+  },
+  {
+    id: 'macd', label: 'MACD', stretch: 1.2,
+    series: [
+      { key: 'macd', type: LineSeries, options: { color: '#2a78d6', lineWidth: 1.5, title: 'MACD' }, data: (rows) => lineData(rows, 'MACD') },
+      { key: 'macdSignal', type: LineSeries, options: { color: '#eda100', lineWidth: 1.5, title: 'Signal' }, data: (rows) => lineData(rows, 'MACD_Signal') },
+      { key: 'macdHist', type: HistogramSeries, options: {}, data: macdHistData },
+    ],
+  },
+  {
+    id: 'stoch', label: 'Stochastic', stretch: 1.2,
+    series: [
+      { key: 'stochK', type: LineSeries, options: { color: '#2a78d6', lineWidth: 1.5, title: '%K' }, data: (rows) => lineData(rows, 'Stoch_K') },
+      { key: 'stochD', type: LineSeries, options: { color: '#eda100', lineWidth: 1.5, title: '%D' }, data: (rows) => lineData(rows, 'Stoch_D') },
+    ],
+    priceLines: [
+      { price: 80, color: '#e5484d', lineStyle: 2, lineWidth: 1, title: '80' },
+      { price: 20, color: '#3ddc84', lineStyle: 2, lineWidth: 1, title: '20' },
+    ],
+    priceLineTargetKey: 'stochK',
+  },
+  {
+    id: 'adx', label: 'ADX', stretch: 1,
+    series: [{ key: 'adx', type: LineSeries, options: { color: '#52514e', lineWidth: 1.5, title: 'ADX14' }, data: (rows) => lineData(rows, 'ADX_14') }],
+  },
+  {
+    id: 'atr', label: 'ATR', stretch: 1,
+    series: [{ key: 'atr', type: LineSeries, options: { color: '#d9822b', lineWidth: 1.5, title: 'ATR14' }, data: (rows) => lineData(rows, 'ATR_14') }],
+  },
+  {
+    id: 'obv', label: 'OBV', stretch: 1,
+    series: [{ key: 'obv', type: LineSeries, options: { color: '#3d8c5f', lineWidth: 1.5, title: 'OBV' }, data: (rows) => lineData(rows, 'OBV') }],
+  },
+  {
+    id: 'pe', label: 'P/E (F/K)', stretch: 1,
+    series: [{ key: 'pe', type: LineSeries, options: { color: '#c2410c', lineWidth: 1.5, title: 'P/E' }, data: (rows) => lineData(rows, 'PE') }],
+  },
+];
+
+const TOGGLE_GROUPS = [
+  ...OVERLAY_GROUPS,
+  ...DEDICATED_GROUPS.map((g) => ({ id: g.id, label: g.label })),
+];
 
 const DRAWING_TOOLS = [
   { id: 'horizontal', label: 'Horizontal Line', clicksNeeded: 1 },
@@ -189,10 +227,57 @@ async function fetchRange(symbol, start, end) {
   return res.json();
 }
 
+// Populates every currently-existing series (pane 0 + whichever dedicated
+// panes are currently mounted) with fresh data. Safe to call any time —
+// series that don't currently exist are simply skipped (`?.`).
+function renderAllSeries(seriesMap, loadedData) {
+  PANE0_SERIES.forEach(({ key, data }) => {
+    seriesMap[key]?.setData(data(loadedData));
+  });
+  DEDICATED_GROUPS.forEach((group) => {
+    group.series.forEach(({ key, data }) => {
+      seriesMap[key]?.setData(data(loadedData));
+    });
+  });
+}
+
+// Tears down ALL dedicated panes (indices 1..N, removed from the end
+// backwards so indices never shift mid-loop) and rebuilds only the
+// currently-visible ones, in DEDICATED_GROUPS order, as pane 1, 2, 3...
+function rebuildDedicatedPanes(chart, seriesMap, currentVisibility) {
+  const paneCount = chart.panes().length;
+  for (let i = paneCount - 1; i >= 1; i--) {
+    chart.removePane(i);
+  }
+  DEDICATED_GROUPS.forEach((group) => {
+    group.series.forEach(({ key }) => {
+      delete seriesMap[key];
+    });
+  });
+
+  let nextIndex = 1;
+  DEDICATED_GROUPS.forEach((group) => {
+    if (!currentVisibility[group.id]) return;
+
+    group.series.forEach(({ key, type, options }) => {
+      seriesMap[key] = chart.addSeries(type, options, nextIndex);
+    });
+    chart.panes()[nextIndex].setStretchFactor(group.stretch);
+
+    if (group.priceLines) {
+      const target = seriesMap[group.priceLineTargetKey];
+      group.priceLines.forEach((line) => target.createPriceLine(line));
+    }
+
+    nextIndex += 1;
+  });
+}
+
 function App() {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesMapRef = useRef({});
+  const loadedDataRef = useRef([]);
   const [error, setError] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -227,39 +312,41 @@ function App() {
 
   function handleToggle(groupId) {
     const nextVisible = !visibility[groupId];
-    setVisibility((prev) => ({ ...prev, [groupId]: nextVisible }));
+    const newVisibility = { ...visibility, [groupId]: nextVisible };
+    setVisibility(newVisibility);
 
-    const group = TOGGLE_GROUPS.find((g) => g.id === groupId);
-    group.keys.forEach((key) => {
-      seriesMapRef.current[key]?.applyOptions({ visible: nextVisible });
-    });
-
-    const paneIndex = GROUP_PANE[groupId];
     const chart = chartRef.current;
-    if (paneIndex === undefined || !chart) return;
+    if (!chart) return;
 
-    const panes = chart.panes();
-    const targetPane = panes[paneIndex];
-    const mainPane = panes[0];
-    if (!targetPane || !mainPane) return;
-
-    if (nextVisible) {
-      targetPane.setStretchFactor(PANE_STRETCH[paneIndex]);
-      mainPane.setStretchFactor(mainPane.getStretchFactor() - PANE_STRETCH[paneIndex]);
+    const isDedicated = DEDICATED_GROUPS.some((g) => g.id === groupId);
+    if (isDedicated) {
+      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
+      renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     } else {
-      targetPane.setStretchFactor(COLLAPSED_STRETCH);
-      mainPane.setStretchFactor(mainPane.getStretchFactor() + PANE_STRETCH[paneIndex]);
+      const group = OVERLAY_GROUPS.find((g) => g.id === groupId);
+      group.keys.forEach((key) => {
+        seriesMapRef.current[key]?.applyOptions({ visible: nextVisible });
+      });
     }
   }
 
   function handleToggleAll() {
     const allVisible = TOGGLE_GROUPS.every((g) => visibility[g.id]);
     const target = !allVisible;
-    TOGGLE_GROUPS.forEach((group) => {
-      if (visibility[group.id] !== target) {
-        handleToggle(group.id);
-      }
+    const newVisibility = Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, target]));
+    setVisibility(newVisibility);
+
+    OVERLAY_GROUPS.forEach((group) => {
+      group.keys.forEach((key) => {
+        seriesMapRef.current[key]?.applyOptions({ visible: target });
+      });
     });
+
+    const chart = chartRef.current;
+    if (chart) {
+      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
+      renderAllSeries(seriesMapRef.current, loadedDataRef.current);
+    }
   }
 
   function clearSelection() {
@@ -417,12 +504,6 @@ function App() {
     let isLoadingMore = false;
     let noMoreData = false;
 
-    function renderSeries() {
-      SERIES_CONFIG.forEach(({ key, data }) => {
-        seriesMapRef.current[key].setData(data(loadedData));
-      });
-    }
-
     async function loadMoreHistory() {
       if (isLoadingMore || noMoreData || loadedData.length === 0) return;
       isLoadingMore = true;
@@ -445,7 +526,8 @@ function App() {
         const previousRange = chart.timeScale().getVisibleLogicalRange();
 
         loadedData = [...older, ...loadedData];
-        renderSeries();
+        loadedDataRef.current = loadedData;
+        renderAllSeries(seriesMapRef.current, loadedData);
 
         if (previousRange) {
           chart.timeScale().setVisibleLogicalRange({
@@ -494,24 +576,16 @@ function App() {
         });
         chartRef.current = chart;
 
-        SERIES_CONFIG.forEach(({ key, pane, type, options }) => {
-          seriesMapRef.current[key] = chart.addSeries(type, options, pane);
+        PANE0_SERIES.forEach(({ key, type, options }) => {
+          seriesMapRef.current[key] = chart.addSeries(type, options, 0);
         });
+        chart.panes()[0].setStretchFactor(MAIN_PANE_STRETCH);
 
-        chart.panes().forEach((pane, i) => {
-          pane.setStretchFactor(PANE_STRETCH[i] ?? 1);
-        });
-
-        const rsi = seriesMapRef.current.rsi;
-        rsi.createPriceLine({ price: 70, color: '#e5484d', lineStyle: 2, lineWidth: 1, title: '70' });
-        rsi.createPriceLine({ price: 30, color: '#3ddc84', lineStyle: 2, lineWidth: 1, title: '30' });
-
-        const stochK = seriesMapRef.current.stochK;
-        stochK.createPriceLine({ price: 80, color: '#e5484d', lineStyle: 2, lineWidth: 1, title: '80' });
-        stochK.createPriceLine({ price: 20, color: '#3ddc84', lineStyle: 2, lineWidth: 1, title: '20' });
+        rebuildDedicatedPanes(chart, seriesMapRef.current, visibility);
 
         loadedData = data;
-        renderSeries();
+        loadedDataRef.current = loadedData;
+        renderAllSeries(seriesMapRef.current, loadedData);
         chart.timeScale().fitContent();
 
         chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -548,6 +622,7 @@ function App() {
       }
       chartRef.current = null;
       seriesMapRef.current = {};
+      loadedDataRef.current = [];
       drawingsRef.current = [];
       pendingPointRef.current = null;
       previewPrimitiveRef.current = null;
