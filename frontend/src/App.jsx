@@ -204,7 +204,10 @@ const DEDICATED_GROUPS = [
   },
   {
     id: 'pe', label: 'P/E (F/K)', stretch: 1,
-    series: [{ key: 'pe', type: LineSeries, options: { color: '#c2410c', lineWidth: 1.5, title: 'P/E' }, data: (rows) => lineData(rows, 'PE') }],
+    series: [
+      { key: 'pe', type: LineSeries, options: { color: '#c2410c', lineWidth: 1.5, title: 'P/E' }, data: (rows) => lineData(rows, 'PE') },
+      { key: 'peYoy', type: LineSeries, options: { color: '#64748b', lineWidth: 1, lineStyle: 2, title: 'P/E (1y ago)' }, data: (rows) => lineData(rows, 'PE_PrevYear') },
+    ],
   },
 ];
 
