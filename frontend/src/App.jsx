@@ -226,7 +226,16 @@ async function fetchRange(symbol, start, end) {
   const toISO = (d) => d.toISOString().slice(0, 10);
   const url = `http://127.0.0.1:8000/api/price/${symbol}?start=${toISO(start)}&end=${toISO(end)}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  if (!res.ok) {
+    let detail = `Server error: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = body.detail;
+    } catch {
+      
+    }
+    throw new Error(detail);
+  }
   return res.json();
 }
 

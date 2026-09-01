@@ -1,8 +1,12 @@
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+
 import borsapy as bp
 import httpx
 import pandas as pd
 import numpy as np
+import price_cache
 
 BUFFER_DAYS = 90
 PE_YOY_BUFFER_DAYS = 400
@@ -11,18 +15,16 @@ ISYATIRIM_MALITABLO_URL = (
     "https://www.isyatirim.com.tr/_Layouts/15/IsYatirim.Website/Common/Data.aspx/MaliTablo"
 )
 
+_fundamentals_cache: dict[str, tuple[float, pd.Series]] = {}
+FUNDAMENTALS_CACHE_TTL = 3600  # saniye — çeyreklik veri bu kadar sık değişmiyor
 
-def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 40) -> pd.Series:
+
+def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 12) -> pd.Series:
     """
     borsapy'nin get_income_stmt() fonksiyonu, hangi çeyreğin yayınlanmış
-    olabileceğini SABİT bir aya göre tahmin ediyor (örn. "Ağustos'ta en
-    son Q1 vardır" varsayımı) - gerçekte veri var mı diye hiç sormuyor.
-    Bu yüzden THYAO'nun 2026Q2 raporu çoktan yayınlanmışken bile borsapy
-    onu bize hiç getirmiyordu.
-
-    Burada aynı İş Yatırım uç noktasına, ŞU ANKİ gerçek çeyrekten geriye
-    doğru kendimiz soruyoruz - veri yoksa İş Yatırım zaten boş/0 döner,
-    biz de onu (mevcut kodumuzdaki <=0 filtresiyle) zaten eliyoruz.
+    olabileceğini SABİT bir aya göre tahmin ediyor - gerçekte veri var mı
+    diye hiç sormuyor. Bu yüzden aynı İş Yatırım uç noktasına, ŞU ANKİ
+    gerçek çeyrekten geriye doğru kendimiz soruyoruz.
     """
     now = datetime.now()
     current_q = (now.month - 1) // 3 + 1
@@ -46,8 +48,6 @@ def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 40) -> pd.Serie
             params[f"period{i}"] = p
 
         try:
-            # verify=False: borsapy'nin kendisi de aynı domain için sertifika
-            # doğrulamasını kapatıyor (BaseProvider'da görüldü), aynısını yapıyoruz.
             resp = httpx.get(ISYATIRIM_MALITABLO_URL, params=params, verify=False, timeout=15)
             items = resp.json().get("value", [])
         except Exception:
@@ -55,7 +55,7 @@ def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 40) -> pd.Serie
 
         for item in items:
             if not str(item.get("itemCode", "")).startswith("3Z"):
-                continue  # sadece "Ana Ortaklık Payları" (3Z) satırını istiyoruz
+                continue
             name = item.get("itemDescTr")
             if name != "Ana Ortaklık Payları":
                 continue
@@ -74,18 +74,34 @@ def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 40) -> pd.Serie
 def get_ttm_eps(symbol: str) -> pd.Series:
     """
     TTM EPS = (son 4 gerçek çeyreğin net kârı) / (güncel hisse sayısı).
-    İki bilinçli tasarım kararı:
-    1) EPS'i borsapy'nin kendi (bozuk) alanından değil, "Ana Ortaklık
-       Payları" net kâr rakamından kendimiz hesaplıyoruz.
-    2) Bu net kâr rakamını borsapy'nin tarih tahminine güvenmeden,
-       gerçek şu anki çeyrekten geriye doğru kendimiz çekiyoruz.
+    Hisse sayısını `fast_info` yerine doğrudan `get_company_metrics()` +
+    ucuz "last price" ile hesaplıyoruz — fast_info, kullanmadığımız 52
+    haftalık yüksek/düşük ve hareketli ortalamaları hesaplamak için tam
+    1 yıllık fiyat geçmişini gereksiz yere bir kez daha indiriyordu.
     """
-    ticker = bp.Ticker(symbol.upper())
-    shares = ticker.fast_info["market_cap"] / ticker.fast_info["last_price"]
+    symbol = symbol.upper()
+    now = time.time()
+
+    cached = _fundamentals_cache.get(symbol)
+    if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
+        return cached[1]
+
+    ticker = bp.Ticker(symbol)
+    metrics = ticker._get_isyatirim().get_company_metrics(symbol)
+    last_price = ticker.info.get("last")  # sadece temel kotasyon, ucuz
+
+    if not metrics.get("market_cap") or not last_price:
+        result = pd.Series(dtype=float)
+        _fundamentals_cache[symbol] = (now, result)
+        return result
+
+    shares = metrics["market_cap"] / last_price
 
     cumulative = _fetch_income_stmt_quarters(symbol)
     if cumulative.empty:
-        return pd.Series(dtype=float)
+        result = pd.Series(dtype=float)
+        _fundamentals_cache[symbol] = (now, result)
+        return result
 
     cumulative = cumulative.sort_index()
     years = [c[:4] for c in cumulative.index]
@@ -102,16 +118,13 @@ def get_ttm_eps(symbol: str) -> pd.Series:
     dates = [pd.Period(col, freq="Q").end_time.normalize() for col in ttm_eps.index]
     ttm_eps.index = pd.DatetimeIndex(dates)
 
-    return ttm_eps.dropna()
+    result = ttm_eps.dropna()
+    _fundamentals_cache[symbol] = (now, result)
+    return result
 
 
-def attach_pe(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-    try:
-        ttm_eps = get_ttm_eps(symbol)
-        if ttm_eps.empty:
-            df["PE"] = None
-            return df
-    except Exception:
+def attach_pe_series(df: pd.DataFrame, ttm_eps: pd.Series) -> pd.DataFrame:
+    if ttm_eps.empty:
         df["PE"] = None
         return df
 
@@ -149,20 +162,31 @@ def attach_pe_yoy(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_price_history(symbol: str, start: str, end: str) -> list[dict]:
-    ticker = bp.Ticker(symbol.upper())
+    symbol = symbol.upper()
 
     requested_start = datetime.fromisoformat(start)
     buffered_start = requested_start - timedelta(days=max(BUFFER_DAYS, PE_YOY_BUFFER_DAYS))
 
-    df = ticker.history(
-        start=buffered_start.strftime("%Y-%m-%d"),
-        end=end,
-    )
+    price_cache.ensure_cached(symbol)
+    price_cache.maybe_refresh_recent(symbol, end)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        price_future = executor.submit(
+            price_cache.query_range, symbol, buffered_start.strftime("%Y-%m-%d"), end
+        )
+        eps_future = executor.submit(get_ttm_eps, symbol)
+
+        df = price_future.result()
+        ttm_eps = eps_future.result()
+
     df = bp.add_indicators(df)
     df = df.reset_index()
     df.columns = [str(c) for c in df.columns]
 
-    df = attach_pe(df, symbol)
+    try:
+        df = attach_pe_series(df, ttm_eps)
+    except Exception:
+        df["PE"] = None
     df = attach_pe_yoy(df)
 
     if "Date" in df.columns:
