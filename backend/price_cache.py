@@ -1,18 +1,10 @@
 """Yerel SQLite fiyat önbelleği.
 
 Fikir basit: geçmiş fiyat verisi asla değişmiyor. Bir sembolü ilk kez
-gördüğümüzde elimizdeki tüm geçmişi bir kere çekip burada
-saklıyoruz. Sonraki her istekte TradingView'e gitmek yerine önce buraya
-bakıyoruz — sadece "en güncel" görünen istekler için (end tarihi bugüne
-yakınsa), en fazla birkaç dakikada bir, son birkaç günü tazeliyoruz.
-
---------------------------ENG------------------------------------
-
-Local SQLite price cache. The idea is simple: historical price data never changes. When we see a
-symbol for the first time, we fetch all the history we have and store it here.
-On subsequent requests, we check here first instead of going to TradingView — only for requests
-that seem "most up-to-date" (if the end date is close to today), 
-we refresh the last few days at most every few minutes.
+gördüğümüzde elimizdeki tüm geçmişi bir kere çekip burada saklıyoruz.
+Sonraki her istekte TradingView'e gitmek yerine önce buraya bakıyoruz —
+sadece "en güncel" görünen istekler için (end tarihi bugüne yakınsa),
+en fazla birkaç dakikada bir, son birkaç günü tazeliyoruz.
 """
 
 import sqlite3
@@ -84,13 +76,48 @@ def _has_symbol(conn: sqlite3.Connection, symbol: str) -> bool:
     return row is not None
 
 
+def _backfill_full_history(symbol: str) -> pd.DataFrame:
+    """
+    borsapy'nin period='max' seçeneği, TradingView'in tek istekteki
+    derinlik sınırına takılıyor (bazı hisselerde birkaç on yıl önce
+    kesiliyor) - oysa gerçekte çok daha eskiye veri olabiliyor.
+    Frontend'deki "geriye doğru parça parça çek" mantığının aynısını
+    burada, ilk seed sırasında uyguluyoruz: boş bir yanıt alana kadar
+    2 yıllık dilimler halinde geriye gidiyoruz.
+    """
+    ticker = bp.Ticker(symbol)
+    chunks = []
+    end = datetime.now()
+    earliest_sane_year = 1985  # güvenlik sınırı, sonsuz döngüye girmesin diye
+
+    while end.year >= earliest_sane_year:
+        start = end - timedelta(days=730)
+        try:
+            chunk = ticker.history(
+                start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d")
+            )
+        except Exception:
+            break
+        if chunk.empty:
+            break
+        chunks.append(chunk)
+        end = start - timedelta(days=1)
+
+    if not chunks:
+        return pd.DataFrame()
+
+    full = pd.concat(chunks)
+    full = full[~full.index.duplicated(keep="first")]
+    return full.sort_index()
+
+
 def ensure_cached(symbol: str) -> None:
-    """Sembol hiç görülmediyse, elde ne kadar geçmiş varsa hepsini bir kere çeker."""
+    """Sembol hiç görülmediyse, gerçek en eskiye kadar parça parça çeker."""
     conn = _get_connection()
     try:
         if _has_symbol(conn, symbol):
             return
-        df = bp.Ticker(symbol).history(period="max")
+        df = _backfill_full_history(symbol)
         _upsert(conn, symbol, df)
     finally:
         conn.close()
