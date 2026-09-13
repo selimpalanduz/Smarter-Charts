@@ -7,6 +7,7 @@ import {
   CrosshairMode,
 } from 'lightweight-charts';
 import { TrendLinePrimitive, RectanglePrimitive, HorizontalLinePrimitive } from './drawingTools.js';
+import VolumeScanWidget from './VolumeScanWidget.jsx';
 
 const CHUNK_MONTHS = 6;
 const EDGE_THRESHOLD = 10;
@@ -320,6 +321,11 @@ function App() {
     e.preventDefault();
     const trimmed = symbolInput.trim().toUpperCase();
     if (trimmed) setSymbol(trimmed);
+  }
+
+  function handleSelectScanSymbol(sym) {
+    setSymbol(sym);
+    setSymbolInput(sym);
   }
 
   function handleToggle(groupId) {
@@ -929,6 +935,8 @@ function App() {
           Error: {error}
         </p>
       )}
+
+      <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
 
       <div
         ref={chartContainerRef}
