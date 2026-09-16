@@ -1,5 +1,6 @@
+import random
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -7,9 +8,14 @@ import borsapy as bp
 import pandas as pd
 
 TICKERS_PATH = Path(__file__).parent / "data" / "tickers.txt"
-SCAN_LOOKBACK_DAYS = 40  # RVOL penceresi + biraz pay
+SCAN_LOOKBACK_DAYS = 40
 RVOL_WINDOW = 20
-SCAN_CACHE_TTL = 1800  # 30 dakika
+SCAN_CACHE_TTL = 1800
+
+MAX_WORKERS = 3
+REQUEST_DELAY = 0.3
+MAX_RETRIES = 2
+FETCH_HARD_TIMEOUT = 8.0  # bir sembol için mutlak azami bekleme (saniye)
 
 _scan_cache: dict[str, tuple[float, list[dict]]] = {}
 _CACHE_KEY = "volume_scan"
@@ -22,23 +28,35 @@ def _load_tickers() -> list[str]:
         return [line.strip() for line in f if line.strip()]
 
 
-def _fetch_recent(symbol: str) -> pd.DataFrame | None:
+def _fetch_once_with_hard_timeout(symbol: str, start: str) -> pd.DataFrame | None:
     """
-    Son SCAN_LOOKBACK_DAYS günü doğrudan borsapy'den çeker.
-    price_cache.py'ye BİLİNÇLİ OLARAK dokunmuyoruz: oradaki ensure_cached()
-    "sembol tabloda var mı" kontrolüyle çalışıyor, "tam geçmişi var mı" diye
-    bakmıyor. Buraya kısmi veri yazmak, o sembol ileride chart'ta açıldığında
-    tam backfill'in sessizce atlanmasına yol açar. O yüzden tarama tamamen
-    ayrı, kendi başına bir fetch yolu kullanıyor.
+    bp.Ticker(...).history() kendi içinde bir timeout sunmuyor — TradingView
+    yanıt vermeden bağlantıyı açık tutarsa bu çağrı SONSUZA kadar bekleyebilir.
+    Bunu kendi tek seferlik thread'inde çalıştırıp dışarıdan zaman sınırı
+    koyuyoruz: süre dolarsa o thread'i (leaked de olsa) terk edip None
+    dönüyoruz, ana worker havuzumuz asla kilitlenmiyor.
     """
-    start = (datetime.now() - timedelta(days=SCAN_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(lambda: bp.Ticker(symbol).history(start=start))
     try:
-        df = bp.Ticker(symbol).history(start=start)
-    except Exception:
+        return future.result(timeout=FETCH_HARD_TIMEOUT)
+    except (FuturesTimeoutError, Exception):
         return None
-    if df is None or df.empty:
-        return None
-    return df
+    finally:
+        executor.shutdown(wait=False)
+
+
+def _fetch_recent(symbol: str) -> pd.DataFrame | None:
+    start = (datetime.now() - timedelta(days=SCAN_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+
+    for attempt in range(MAX_RETRIES + 1):
+        time.sleep(REQUEST_DELAY + random.uniform(0, 0.2))
+        df = _fetch_once_with_hard_timeout(symbol, start)
+        if df is not None and not df.empty:
+            return df
+        if attempt < MAX_RETRIES:
+            time.sleep(2 ** (attempt + 1))
+    return None
 
 
 def _compute_rvol(symbol: str, df: pd.DataFrame, window: int = RVOL_WINDOW) -> dict | None:
@@ -63,17 +81,23 @@ def _compute_rvol(symbol: str, df: pd.DataFrame, window: int = RVOL_WINDOW) -> d
 def _run_scan() -> list[dict]:
     symbols = _load_tickers()
     results = []
+    total = len(symbols)
+    done = 0
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(_fetch_recent, sym): sym for sym in symbols}
         for future, symbol in futures.items():
-            df = future.result()
+            df = future.result()  # artık sonsuza kadar bekleyemez, _fetch_recent kendi içinde sınırlı
+            done += 1
+            if done % 25 == 0 or done == total:
+                print(f"[scan] {done}/{total} sembol işlendi")
             if df is None:
                 continue
             row = _compute_rvol(symbol, df)
             if row is not None:
                 results.append(row)
 
+    print(f"[scan] tamamlandı: {len(results)}/{total} sembol sonuç verdi")
     results.sort(key=lambda r: r["RVOL"], reverse=True)
     return results
 
