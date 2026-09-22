@@ -1,6 +1,6 @@
 import random
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -12,10 +12,11 @@ SCAN_LOOKBACK_DAYS = 40
 RVOL_WINDOW = 20
 SCAN_CACHE_TTL = 1800
 
-MAX_WORKERS = 3
+MAX_WORKERS = 5
 REQUEST_DELAY = 0.3
 MAX_RETRIES = 2
-FETCH_HARD_TIMEOUT = 8.0  # bir sembol için mutlak azami bekleme (saniye)
+FETCH_HARD_TIMEOUT = 6.0
+SCAN_OVERALL_DEADLINE = 120.0  # tüm tarama için üst sınır (saniye)
 
 _scan_cache: dict[str, tuple[float, list[dict]]] = {}
 _CACHE_KEY = "volume_scan"
@@ -28,22 +29,29 @@ def _load_tickers() -> list[str]:
         return [line.strip() for line in f if line.strip()]
 
 
-def _fetch_once_with_hard_timeout(symbol: str, start: str) -> pd.DataFrame | None:
+def _fetch_once(symbol: str, start: str) -> tuple[pd.DataFrame | None, str]:
     """
-    bp.Ticker(...).history() kendi içinde bir timeout sunmuyor — TradingView
-    yanıt vermeden bağlantıyı açık tutarsa bu çağrı SONSUZA kadar bekleyebilir.
-    Bunu kendi tek seferlik thread'inde çalıştırıp dışarıdan zaman sınırı
-    koyuyoruz: süre dolarsa o thread'i (leaked de olsa) terk edip None
-    dönüyoruz, ana worker havuzumuz asla kilitlenmiyor.
+    Tek bir deneme yapar, sonucu VE sebebini döner:
+    ("timeout" | "rate_limit" | "empty" | "ok" | "error")
+    Sadece "rate_limit" gerçekten tekrar denemeye değer — diğerleri
+    (özellikle "empty") o sembolün zaten veri vermeyeceğini gösterir.
     """
     executor = ThreadPoolExecutor(max_workers=1)
     future = executor.submit(lambda: bp.Ticker(symbol).history(start=start))
     try:
-        return future.result(timeout=FETCH_HARD_TIMEOUT)
-    except (FuturesTimeoutError, Exception):
-        return None
+        df = future.result(timeout=FETCH_HARD_TIMEOUT)
+    except FuturesTimeoutError:
+        return None, "timeout"
+    except Exception as e:
+        if "429" in str(e):
+            return None, "rate_limit"
+        return None, "error"
     finally:
         executor.shutdown(wait=False)
+
+    if df is None or df.empty:
+        return None, "empty"
+    return df, "ok"
 
 
 def _fetch_recent(symbol: str) -> pd.DataFrame | None:
@@ -51,11 +59,16 @@ def _fetch_recent(symbol: str) -> pd.DataFrame | None:
 
     for attempt in range(MAX_RETRIES + 1):
         time.sleep(REQUEST_DELAY + random.uniform(0, 0.2))
-        df = _fetch_once_with_hard_timeout(symbol, start)
-        if df is not None and not df.empty:
+        df, reason = _fetch_once(symbol, start)
+
+        if reason == "ok":
             return df
+        if reason != "rate_limit":
+            # timeout / empty / error: tekrar denemeye değmez, bu sembolü geç
+            return None
         if attempt < MAX_RETRIES:
             time.sleep(2 ** (attempt + 1))
+
     return None
 
 
@@ -83,19 +96,30 @@ def _run_scan() -> list[dict]:
     results = []
     total = len(symbols)
     done = 0
+    deadline = time.time() + SCAN_OVERALL_DEADLINE
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(_fetch_recent, sym): sym for sym in symbols}
-        for future, symbol in futures.items():
-            df = future.result()  # artık sonsuza kadar bekleyemez, _fetch_recent kendi içinde sınırlı
+
+        for future in as_completed(futures):
+            symbol = futures[future]
             done += 1
             if done % 25 == 0 or done == total:
                 print(f"[scan] {done}/{total} sembol işlendi")
-            if df is None:
-                continue
-            row = _compute_rvol(symbol, df)
-            if row is not None:
-                results.append(row)
+
+            try:
+                df = future.result()
+            except Exception:
+                df = None
+
+            if df is not None:
+                row = _compute_rvol(symbol, df)
+                if row is not None:
+                    results.append(row)
+
+            if time.time() > deadline:
+                print(f"[scan] süre doldu, {done}/{total} sembolle devam ediliyor")
+                break
 
     print(f"[scan] tamamlandı: {len(results)}/{total} sembol sonuç verdi")
     results.sort(key=lambda r: r["RVOL"], reverse=True)
