@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 const API_BASE = 'http://127.0.0.1:8000';
 
@@ -28,9 +28,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
     }
   }
 
-  useEffect(() => {
-    loadScan(false);
-  }, []);
+  const hasScanned = results.length > 0 || error !== null;
 
   return (
     <div
@@ -53,10 +51,10 @@ function VolumeScanWidget({ onSelectSymbol }) {
           <button
             className="stc-btn"
             style={{ padding: '4px 8px', fontSize: '11px' }}
-            onClick={() => loadScan(true)}
+            onClick={() => loadScan(hasScanned)}
             disabled={loading}
           >
-            {loading ? '...' : 'Yenile'}
+            {loading ? '...' : hasScanned ? 'Yenile' : 'Tara'}
           </button>
           <button
             className="stc-btn"
@@ -69,6 +67,12 @@ function VolumeScanWidget({ onSelectSymbol }) {
       </div>
 
       {error && <p style={{ color: '#ef5350', fontSize: '12px', margin: 0 }}>{error}</p>}
+
+      {!hasScanned && !loading && (
+        <p style={{ opacity: 0.6, fontSize: '11px', margin: 0 }}>
+          563 sembolü taramak için "Tara"ya bas.
+        </p>
+      )}
 
       {!collapsed && (
         <div style={{ overflowY: 'auto', maxHeight: '260px' }}>
