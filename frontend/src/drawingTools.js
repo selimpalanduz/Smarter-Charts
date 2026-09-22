@@ -225,6 +225,65 @@ export class RectanglePrimitive {
   }
 }
 
+// Auto-detected support/resistance zone — a filled horizontal band spanning
+// the full chart width, drawn from data (not user-placed like the tools
+// above), so it has no hitTest/selection behavior.
+export class SRZonePrimitive {
+  constructor(zone, options = {}) {
+    this._zone = zone;
+    this._options = { fillColor: 'rgba(150,150,150,0.1)', lineColor: '#888888', label: '', ...options };
+    this._paneViews = [new BasePaneView(this)];
+    this._chart = null;
+    this._series = null;
+  }
+  attached({ chart, series }) {
+    this._chart = chart;
+    this._series = series;
+  }
+  detached() {
+    this._chart = null;
+    this._series = null;
+  }
+  updateAllViews() {
+    this._paneViews.forEach((v) => v.update());
+  }
+  paneViews() {
+    return this._paneViews;
+  }
+  _draw(ctx, mediaSize) {
+    if (!this._series) return;
+    const yTop = this._series.priceToCoordinate(this._zone.max);
+    const yBottom = this._series.priceToCoordinate(this._zone.min);
+    if (yTop === null || yBottom === null) return;
+    const yMean = this._series.priceToCoordinate(this._zone.mean);
+
+    ctx.save();
+    ctx.fillStyle = this._options.fillColor;
+    ctx.fillRect(0, yTop, mediaSize.width, Math.max(1, yBottom - yTop));
+
+    if (yMean !== null) {
+      ctx.strokeStyle = this._options.lineColor;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.6;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, yMean);
+      ctx.lineTo(mediaSize.width, yMean);
+      ctx.stroke();
+    }
+
+    if (this._options.label) {
+      ctx.globalAlpha = 0.9;
+      ctx.setLineDash([]);
+      ctx.fillStyle = this._options.lineColor;
+      ctx.font = '10px ui-monospace, Consolas, monospace';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(this._options.label, 4, yTop - 2);
+    }
+    ctx.restore();
+  }
+}
+
 export class HorizontalLinePrimitive {
   constructor(price, options = {}) {
     this._price = price;

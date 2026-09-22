@@ -6,7 +6,7 @@ import {
   HistogramSeries,
   CrosshairMode,
 } from 'lightweight-charts';
-import { TrendLinePrimitive, RectanglePrimitive, HorizontalLinePrimitive } from './drawingTools.js';
+import { TrendLinePrimitive, RectanglePrimitive, HorizontalLinePrimitive, SRZonePrimitive } from './drawingTools.js';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
 
 const CHUNK_MONTHS = 6;
@@ -149,6 +149,7 @@ const OVERLAY_GROUPS = [
   { id: 'bb', label: 'Bollinger Bands', keys: ['bbUpper', 'bbMiddle', 'bbLower'] },
   { id: 'vwap', label: 'VWAP', keys: ['vwap'] },
   { id: 'supertrend', label: 'Supertrend', keys: ['supertrendUp', 'supertrendDown'] },
+  { id: 'srZones', label: 'Destek/Direnç', keys: [] },
 ];
 
 // Groups that get their OWN dedicated pane. This array's order is the fixed
@@ -240,6 +241,36 @@ async function fetchRange(symbol, start, end) {
   return res.json();
 }
 
+async function fetchSrZones(symbol) {
+  const url = `http://127.0.0.1:8000/api/sr/${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  return res.json();
+}
+
+// Rebuilds the S/R zone primitives on the candle series from scratch:
+// detaches whatever is currently attached (tracked in primitivesRef),
+// then — only when visible and data is available — attaches one
+// SRZonePrimitive per zone (red for resistance, green for support).
+function applySrZones(series, primitivesRef, srData, visible) {
+  if (!series) return;
+  primitivesRef.current.forEach((p) => series.detachPrimitive(p));
+  primitivesRef.current = [];
+
+  if (!visible || !srData) return;
+
+  const build = (zone, color, fillColor) =>
+    new SRZonePrimitive(zone, { lineColor: color, fillColor, label: `${zone.touches}x` });
+
+  const primitives = [
+    ...(srData.resistance || []).map((z) => build(z, '#ef5350', 'rgba(239,83,80,0.10)')),
+    ...(srData.support || []).map((z) => build(z, '#26a69a', 'rgba(38,166,154,0.10)')),
+  ];
+
+  primitives.forEach((p) => series.attachPrimitive(p));
+  primitivesRef.current = primitives;
+}
+
 // Populates every currently-existing series (pane 0 + whichever dedicated
 // panes are currently mounted) with fresh data. Safe to call any time —
 // series that don't currently exist are simply skipped (`?.`).
@@ -294,9 +325,14 @@ function App() {
   const [error, setError] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
-  const [visibility, setVisibility] = useState(
-    () => Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, true]))
-  );
+  const [visibility, setVisibility] = useState(() => {
+    const v = Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, true]));
+    v.srZones = false; // opsiyonel özellik, varsayılan kapalı
+    return v;
+  });
+
+  const srZonesRef = useRef(null);
+  const srPrimitivesRef = useRef([]);
 
   const [symbol, setSymbol] = useState('THYAO');
   const [symbolInput, setSymbolInput] = useState('THYAO');
@@ -336,6 +372,11 @@ function App() {
     const chart = chartRef.current;
     if (!chart) return;
 
+    if (groupId === 'srZones') {
+      applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, nextVisible);
+      return;
+    }
+
     const isDedicated = DEDICATED_GROUPS.some((g) => g.id === groupId);
     if (isDedicated) {
       rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
@@ -359,6 +400,7 @@ function App() {
         seriesMapRef.current[key]?.applyOptions({ visible: target });
       });
     });
+    applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, target);
 
     const chart = chartRef.current;
     if (chart) {
@@ -567,8 +609,14 @@ function App() {
         const start = new Date();
         start.setMonth(start.getMonth() - CHUNK_MONTHS);
 
+        // SR zonelarını fiyat verisinden SONRA, sırayla çekiyoruz - aynı anda
+        // çekmek ikisinin de fiyat cache'ini aynı anda tazelemeye çalışmasına
+        // ve TradingView'den 429 (rate limit) almasına yol açıyordu.
         const data = await fetchRange(symbol, start, end);
         if (cancelled) return;
+        const srData = await fetchSrZones(symbol).catch(() => null);
+        if (cancelled) return;
+        srZonesRef.current = srData;
 
         const currentTheme = darkMode ? THEME.dark : THEME.light;
 
@@ -604,6 +652,7 @@ function App() {
         loadedData = data;
         loadedDataRef.current = loadedData;
         renderAllSeries(seriesMapRef.current, loadedData);
+        applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
         chart.timeScale().fitContent();
 
         chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -642,6 +691,7 @@ function App() {
       seriesMapRef.current = {};
       loadedDataRef.current = [];
       drawingsRef.current = [];
+      srPrimitivesRef.current = [];
       pendingPointRef.current = null;
       previewPrimitiveRef.current = null;
       selectedDrawingRef.current = null;
