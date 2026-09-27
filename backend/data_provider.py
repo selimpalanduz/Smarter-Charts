@@ -48,7 +48,7 @@ def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 12) -> pd.Serie
             params[f"period{i}"] = p
 
         try:
-            resp = httpx.get(ISYATIRIM_MALITABLO_URL, params=params, verify=False, timeout=15)
+            resp = httpx.get(ISYATIRIM_MALITABLO_URL, params=params, timeout=15)
             items = resp.json().get("value", [])
         except Exception:
             continue

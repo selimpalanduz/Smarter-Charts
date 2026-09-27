@@ -22,7 +22,7 @@ PIVOT_DISTANCE = 5
 MAX_SUPPORTS = 8
 
 
-def _find_sr_levels(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+def find_sr_levels(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
     if df is None or df.empty:
         return [], []
 
@@ -118,6 +118,6 @@ def get_sr_zones(symbol: str) -> dict:
     start = (datetime.now() - timedelta(days=LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
     df = price_cache.query_range(symbol, start, end)
-    resistances, supports = _find_sr_levels(df)
+    resistances, supports = find_sr_levels(df)
 
     return {"resistance": resistances, "support": supports}

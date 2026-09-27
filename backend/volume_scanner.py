@@ -1,25 +1,31 @@
-import random
+"""Hacim anomalisi taraması.
+
+Her sembol için ayrı ayrı geçmiş çekmek yerine TradingView screener'ına
+tek bir istek atıyoruz: tüm BIST listesinin son hacmi ve 10 günlük
+ortalama hacmi sunucu tarafında hesaplanmış olarak geliyor.
+"""
+
+import math
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
-from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import borsapy as bp
 import pandas as pd
 
-TICKERS_PATH = Path(__file__).parent / "data" / "tickers.txt"
-SCAN_LOOKBACK_DAYS = 40
-RVOL_WINDOW = 20
-SCAN_CACHE_TTL = 1800
+from sr_zones import find_sr_levels
 
-MAX_WORKERS = 5
-REQUEST_DELAY = 0.3
-MAX_RETRIES = 2
-FETCH_HARD_TIMEOUT = 6.0
-SCAN_OVERALL_DEADLINE = 120.0  # tüm tarama için üst sınır (saniye)
+TICKERS_PATH = Path(__file__).parent / "data" / "tickers.txt"
+SCAN_CACHE_TTL = 300
+
+BREAKOUT_MIN_RVOL = 2.0
+BREAKOUT_MAX_CANDIDATES = 30
+BREAKOUT_WORKERS = 4
+HISTORY_CACHE_TTL = 3600
 
 _scan_cache: dict[str, tuple[float, list[dict]]] = {}
 _CACHE_KEY = "volume_scan"
+_history_cache: dict[str, tuple[float, pd.DataFrame]] = {}
 
 
 def _load_tickers() -> list[str]:
@@ -29,101 +35,80 @@ def _load_tickers() -> list[str]:
         return [line.strip() for line in f if line.strip()]
 
 
-def _fetch_once(symbol: str, start: str) -> tuple[pd.DataFrame | None, str]:
-    """
-    Tek bir deneme yapar, sonucu VE sebebini döner:
-    ("timeout" | "rate_limit" | "empty" | "ok" | "error")
-    Sadece "rate_limit" gerçekten tekrar denemeye değer — diğerleri
-    (özellikle "empty") o sembolün zaten veri vermeyeceğini gösterir.
-    """
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(lambda: bp.Ticker(symbol).history(start=start))
-    try:
-        df = future.result(timeout=FETCH_HARD_TIMEOUT)
-    except FuturesTimeoutError:
-        return None, "timeout"
-    except Exception as e:
-        if "429" in str(e):
-            return None, "rate_limit"
-        return None, "error"
-    finally:
-        executor.shutdown(wait=False)
-
-    if df is None or df.empty:
-        return None, "empty"
-    return df, "ok"
-
-
-def _fetch_recent(symbol: str) -> pd.DataFrame | None:
-    start = (datetime.now() - timedelta(days=SCAN_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
-
-    for attempt in range(MAX_RETRIES + 1):
-        time.sleep(REQUEST_DELAY + random.uniform(0, 0.2))
-        df, reason = _fetch_once(symbol, start)
-
-        if reason == "ok":
-            return df
-        if reason != "rate_limit":
-            # timeout / empty / error: tekrar denemeye değmez, bu sembolü geç
-            return None
-        if attempt < MAX_RETRIES:
-            time.sleep(2 ** (attempt + 1))
-
-    return None
-
-
-def _compute_rvol(symbol: str, df: pd.DataFrame, window: int = RVOL_WINDOW) -> dict | None:
-    if len(df) < window + 1:
-        return None
-    df = df.sort_index()
-    avg_volume = df["Volume"].rolling(window=window).mean()
-    rvol = df["Volume"] / avg_volume
-    last = df.iloc[-1]
-    last_rvol = rvol.iloc[-1]
-    if pd.isna(last_rvol):
-        return None
-    return {
-        "Symbol": symbol,
-        "Date": last.name.strftime("%Y-%m-%d"),
-        "Close": round(float(last["Close"]), 2),
-        "Volume": int(last["Volume"]),
-        "RVOL": round(float(last_rvol), 2),
-    }
-
-
 def _run_scan() -> list[dict]:
     symbols = _load_tickers()
+
+    scanner = bp.TechnicalScanner()
+    scanner.set_universe(symbols)
+    scanner.add_condition("volume > 0")
+    scanner.add_column("relative_volume_10d_calc")
+    df = scanner.run(limit=len(symbols) + 50)
+
     results = []
-    total = len(symbols)
-    done = 0
-    deadline = time.time() + SCAN_OVERALL_DEADLINE
+    for row in df.itertuples(index=False):
+        rvol = row.relative_volume_10d_calc
+        if rvol is None or math.isnan(rvol):
+            continue
+        results.append(
+            {
+                "Symbol": row.symbol,
+                "Close": round(float(row.close), 2),
+                "Volume": int(row.volume),
+                "RVOL": round(float(rvol), 2),
+            }
+        )
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(_fetch_recent, sym): sym for sym in symbols}
-
-        for future in as_completed(futures):
-            symbol = futures[future]
-            done += 1
-            if done % 25 == 0 or done == total:
-                print(f"[scan] {done}/{total} sembol işlendi")
-
-            try:
-                df = future.result()
-            except Exception:
-                df = None
-
-            if df is not None:
-                row = _compute_rvol(symbol, df)
-                if row is not None:
-                    results.append(row)
-
-            if time.time() > deadline:
-                print(f"[scan] süre doldu, {done}/{total} sembolle devam ediliyor")
-                break
-
-    print(f"[scan] tamamlandı: {len(results)}/{total} sembol sonuç verdi")
+    print(f"[scan] {len(results)}/{len(symbols)} sembol sonuç verdi")
     results.sort(key=lambda r: r["RVOL"], reverse=True)
+    _attach_breakouts(results)
     return results
+
+
+def _get_year_history(symbol: str) -> pd.DataFrame | None:
+    # SQLite önbelleğine yazmıyoruz: orada bir sembolün varlığı "tüm geçmiş
+    # çekildi" anlamına geliyor, 1 yıllık kısmi veri o varsayımı bozar.
+    now = time.time()
+    cached = _history_cache.get(symbol)
+    if cached and (now - cached[0]) < HISTORY_CACHE_TTL:
+        return cached[1]
+    try:
+        df = bp.Ticker(symbol).history(period="1y")
+    except Exception:
+        return None
+    if df is None or df.empty:
+        return None
+    _history_cache[symbol] = (now, df)
+    return df
+
+
+def _find_breakout(row: dict) -> float | None:
+    """Son bardan önceki veriyle direnç bulur; son kapanış onu aştıysa seviyeyi döner."""
+    df = _get_year_history(row["Symbol"])
+    if df is None:
+        return None
+    last_day = df.index[-1].date()
+    past = df[df.index.date < last_day]
+    if len(past) < 30:
+        return None
+
+    resistances, _ = find_sr_levels(past)
+    broken = [z for z in resistances if row["Close"] > z["max"]]
+    if not broken:
+        return None
+    return round(max(z["mean"] for z in broken), 2)
+
+
+def _attach_breakouts(results: list[dict]) -> None:
+    candidates = [r for r in results if r["RVOL"] >= BREAKOUT_MIN_RVOL][:BREAKOUT_MAX_CANDIDATES]
+    for r in results:
+        r["Breakout"] = None
+
+    with ThreadPoolExecutor(max_workers=BREAKOUT_WORKERS) as executor:
+        for row, level in zip(candidates, executor.map(_find_breakout, candidates)):
+            row["Breakout"] = level
+
+    found = sum(1 for r in candidates if r["Breakout"] is not None)
+    print(f"[scan] {len(candidates)} adaydan {found} tanesi direnç kırdı")
 
 
 def get_scan(force_refresh: bool = False) -> list[dict]:
