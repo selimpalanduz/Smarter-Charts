@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from data_provider import get_price_history
 from volume_scanner import get_scan
 from sr_zones import get_sr_zones
+from earnings import get_earnings
 
 app = FastAPI()
 
@@ -36,3 +37,10 @@ def get_sr(symbol: str):
         return get_sr_zones(symbol)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Destek/direnç hesaplanamadı: {e}")
+
+@app.get("/api/earnings/{symbol}")
+def get_earnings_markers(symbol: str):
+    try:
+        return get_earnings(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Bilanço verisi alınamadı: {e}")

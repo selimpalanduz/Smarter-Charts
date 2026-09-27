@@ -5,6 +5,7 @@ import {
   LineSeries,
   HistogramSeries,
   CrosshairMode,
+  createSeriesMarkers,
 } from 'lightweight-charts';
 import { TrendLinePrimitive, RectanglePrimitive, HorizontalLinePrimitive, SRZonePrimitive } from './drawingTools.js';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
@@ -150,6 +151,7 @@ const OVERLAY_GROUPS = [
   { id: 'vwap', label: 'VWAP', keys: ['vwap'] },
   { id: 'supertrend', label: 'Supertrend', keys: ['supertrendUp', 'supertrendDown'] },
   { id: 'srZones', label: 'Destek/Direnç', keys: [] },
+  { id: 'earnings', label: 'Bilançolar', keys: [] },
 ];
 
 // Groups that get their OWN dedicated pane. This array's order is the fixed
@@ -248,6 +250,63 @@ async function fetchSrZones(symbol) {
   return res.json();
 }
 
+async function fetchEarnings(symbol) {
+  const url = `http://127.0.0.1:8000/api/earnings/${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  return res.json();
+}
+
+function reactionColor(pct) {
+  if (pct == null) return '#9ca3af';
+  return pct >= 0 ? '#26a69a' : '#ef5350';
+}
+
+function applyEarnings(markersPlugin, earningsData, visible) {
+  if (!markersPlugin) return;
+  if (!visible || !earningsData) {
+    markersPlugin.setMarkers([]);
+    return;
+  }
+  markersPlugin.setMarkers(
+    earningsData.events.map((ev) => ({
+      time: ev.date,
+      position: 'belowBar',
+      shape: 'circle',
+      color: reactionColor(ev.reactionPct),
+      text: 'B',
+    }))
+  );
+}
+
+// Crosshair `time` string olarak verilen veride BusinessDay nesnesi olarak dönebiliyor.
+function timeToISO(time) {
+  if (typeof time === 'string') return time;
+  if (typeof time === 'number') return new Date(time * 1000).toISOString().slice(0, 10);
+  if (time && typeof time === 'object') {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${time.year}-${pad(time.month)}-${pad(time.day)}`;
+  }
+  return null;
+}
+
+function formatTL(value) {
+  if (value == null) return '-';
+  const abs = Math.abs(value);
+  if (abs >= 1e9) return `${(value / 1e9).toFixed(2)} milyar TL`;
+  return `${(value / 1e6).toFixed(1)} milyon TL`;
+}
+
+function formatPct(value) {
+  if (value == null) return '-';
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+}
+
+function formatDateTR(iso) {
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  return `${d}.${m}.${y}${iso.length > 10 ? ' ' + iso.slice(11) : ''}`;
+}
+
 // Rebuilds the S/R zone primitives on the candle series from scratch:
 // detaches whatever is currently attached (tracked in primitivesRef),
 // then — only when visible and data is available — attaches one
@@ -334,6 +393,12 @@ function App() {
   const srZonesRef = useRef(null);
   const srPrimitivesRef = useRef([]);
 
+  const earningsRef = useRef(null);
+  const earningsMarkersRef = useRef(null);
+  const earningsVisibleRef = useRef(true);
+  const [earningsTip, setEarningsTip] = useState(null);
+  const [earningsNext, setEarningsNext] = useState(null);
+
   const [symbol, setSymbol] = useState('THYAO');
   const [symbolInput, setSymbolInput] = useState('THYAO');
 
@@ -377,6 +442,13 @@ function App() {
       return;
     }
 
+    if (groupId === 'earnings') {
+      earningsVisibleRef.current = nextVisible;
+      applyEarnings(earningsMarkersRef.current, earningsRef.current, nextVisible);
+      if (!nextVisible) setEarningsTip(null);
+      return;
+    }
+
     const isDedicated = DEDICATED_GROUPS.some((g) => g.id === groupId);
     if (isDedicated) {
       rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
@@ -401,6 +473,9 @@ function App() {
       });
     });
     applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, target);
+    earningsVisibleRef.current = target;
+    applyEarnings(earningsMarkersRef.current, earningsRef.current, target);
+    if (!target) setEarningsTip(null);
 
     const chart = chartRef.current;
     if (chart) {
@@ -617,6 +692,10 @@ function App() {
         const srData = await fetchSrZones(symbol).catch(() => null);
         if (cancelled) return;
         srZonesRef.current = srData;
+        const earningsData = await fetchEarnings(symbol).catch(() => null);
+        if (cancelled) return;
+        earningsRef.current = earningsData;
+        setEarningsNext(earningsData?.next ?? null);
 
         const currentTheme = darkMode ? THEME.dark : THEME.light;
 
@@ -653,6 +732,9 @@ function App() {
         loadedDataRef.current = loadedData;
         renderAllSeries(seriesMapRef.current, loadedData);
         applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
+        earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
+        earningsVisibleRef.current = visibility.earnings;
+        applyEarnings(earningsMarkersRef.current, earningsRef.current, visibility.earnings);
         chart.timeScale().fitContent();
 
         chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -663,6 +745,17 @@ function App() {
 
         chart.subscribeClick(handleChartClick);
         chart.subscribeCrosshairMove(handleCrosshairMove);
+
+        const eventsByDate = new Map((earningsData?.events || []).map((ev) => [ev.date, ev]));
+        chart.subscribeCrosshairMove((param) => {
+          const date = param.time ? timeToISO(param.time) : null;
+          const ev = earningsVisibleRef.current && date ? eventsByDate.get(date) : null;
+          if (!ev || !param.point) {
+            setEarningsTip((prev) => (prev ? null : prev));
+            return;
+          }
+          setEarningsTip({ x: param.point.x, y: param.point.y, event: ev });
+        });
 
         const resizeObserver = new ResizeObserver((entries) => {
           if (chart && entries[0]) {
@@ -692,6 +785,10 @@ function App() {
       loadedDataRef.current = [];
       drawingsRef.current = [];
       srPrimitivesRef.current = [];
+      earningsRef.current = null;
+      earningsMarkersRef.current = null;
+      setEarningsTip(null);
+      setEarningsNext(null);
       pendingPointRef.current = null;
       previewPrimitiveRef.current = null;
       selectedDrawingRef.current = null;
@@ -894,6 +991,11 @@ function App() {
       <div className="stc-header" style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 20 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
           <h2 className="stc-title">{symbol}</h2>
+          {visibility.earnings && earningsNext && (
+            <span style={{ fontSize: '11px', color: 'var(--text-dim)', padding: '0 4px' }}>
+              Sonraki bilanço: {formatDateTR(earningsNext)} (beklenen)
+            </span>
+          )}
           <button
             className="stc-theme-toggle"
             onClick={() => setDarkMode((d) => !d)}
@@ -987,6 +1089,34 @@ function App() {
       )}
 
       <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
+
+      {earningsTip && (
+        <div
+          className="stc-header"
+          style={{
+            position: 'absolute',
+            left: Math.max(8, Math.min(earningsTip.x + 14, window.innerWidth - 250)),
+            top: Math.max(8, earningsTip.y - 130),
+            zIndex: 30,
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: '3px',
+            padding: '10px 12px',
+            width: '230px',
+            fontSize: '12px',
+            color: 'var(--text)',
+            pointerEvents: 'none',
+          }}
+        >
+          <strong style={{ fontSize: '13px' }}>Bilanço {earningsTip.event.period}</strong>
+          <span style={{ opacity: 0.7 }}>Açıklandı: {formatDateTR(earningsTip.event.publishedAt)}</span>
+          <span>Net kâr: {formatTL(earningsTip.event.netIncome)}</span>
+          <span>Yıllık değişim: {formatPct(earningsTip.event.netIncomeYoY)}</span>
+          <span style={{ color: reactionColor(earningsTip.event.reactionPct) }}>
+            {earningsTip.event.reactionDays} günlük fiyat tepkisi: {formatPct(earningsTip.event.reactionPct)}
+          </span>
+        </div>
+      )}
 
       <div
         ref={chartContainerRef}

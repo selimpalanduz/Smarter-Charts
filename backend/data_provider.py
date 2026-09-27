@@ -16,7 +16,9 @@ ISYATIRIM_MALITABLO_URL = (
 )
 
 _fundamentals_cache: dict[str, tuple[float, pd.Series]] = {}
+_net_income_cache: dict[str, tuple[float, pd.Series]] = {}
 FUNDAMENTALS_CACHE_TTL = 3600  # saniye — çeyreklik veri bu kadar sık değişmiyor
+NET_INCOME_QUARTERS = 20
 
 
 def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 12) -> pd.Series:
@@ -71,6 +73,34 @@ def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 12) -> pd.Serie
     return pd.Series(records["Ana Ortaklık Payları"])
 
 
+def get_quarterly_net_income(symbol: str) -> pd.Series:
+    """
+    İş Yatırım yıl içi kümülatif veriyor; tek çeyreği bulmak için bir önceki
+    çeyreği çıkarıyoruz. Önceki çeyrek eksikse (ör. serinin en eski Q4'ü)
+    sonucu NaN bırakıyoruz — aksi halde yıllık toplam tek çeyrek sanılır.
+    Index: "2026Q2" biçiminde.
+    """
+    symbol = symbol.upper()
+    now = time.time()
+    cached = _net_income_cache.get(symbol)
+    if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
+        return cached[1]
+
+    cumulative = _fetch_income_stmt_quarters(symbol, NET_INCOME_QUARTERS).sort_index()
+    standalone = {}
+    for col, value in cumulative.items():
+        year, q = int(col[:4]), int(col[5:])
+        if q == 1:
+            standalone[col] = value
+            continue
+        prev = cumulative.get(f"{year}Q{q - 1}")
+        standalone[col] = value - prev if prev is not None else np.nan
+
+    result = pd.Series(standalone, dtype=float)
+    _net_income_cache[symbol] = (now, result)
+    return result
+
+
 def get_ttm_eps(symbol: str) -> pd.Series:
     """
     TTM EPS = (son 4 gerçek çeyreğin net kârı) / (güncel hisse sayısı).
@@ -97,20 +127,11 @@ def get_ttm_eps(symbol: str) -> pd.Series:
 
     shares = metrics["market_cap"] / last_price
 
-    cumulative = _fetch_income_stmt_quarters(symbol)
-    if cumulative.empty:
+    standalone = get_quarterly_net_income(symbol)
+    if standalone.empty:
         result = pd.Series(dtype=float)
         _fundamentals_cache[symbol] = (now, result)
         return result
-
-    cumulative = cumulative.sort_index()
-    years = [c[:4] for c in cumulative.index]
-    quarters = [c[4:] for c in cumulative.index]
-
-    standalone = cumulative.copy()
-    for i in range(1, len(cumulative)):
-        if years[i] == years[i - 1] and quarters[i] != "Q1":
-            standalone.iloc[i] = cumulative.iloc[i] - cumulative.iloc[i - 1]
 
     quarterly_eps = standalone / shares
     ttm_eps = quarterly_eps.rolling(4).sum()
