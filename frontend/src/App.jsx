@@ -16,6 +16,7 @@ import {
 } from './drawingTools.js';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
 import PatternSearchWidget from './PatternSearchWidget.jsx';
+import MoveReasonsWidget from './MoveReasonsWidget.jsx';
 import { API_BASE } from './config.js';
 
 const CHUNK_MONTHS = 6;
@@ -160,6 +161,7 @@ const OVERLAY_GROUPS = [
   { id: 'supertrend', label: 'Supertrend', keys: ['supertrendUp', 'supertrendDown'] },
   { id: 'srZones', label: 'Destek/Direnç', keys: [] },
   { id: 'earnings', label: 'Bilançolar', keys: [] },
+  { id: 'moves', label: 'Sert Hareketler', keys: [] },
 ];
 
 // Groups that get their OWN dedicated pane. This array's order is the fixed
@@ -282,21 +284,44 @@ function reactionColor(pct) {
   return pct >= 0 ? '#26a69a' : '#ef5350';
 }
 
-function applyEarnings(markersPlugin, earningsData, visible) {
+async function fetchMoves(symbol) {
+  const url = `${API_BASE}/api/moves/${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  return res.json();
+}
+
+// Earnings and sharp-move markers share one plugin so they stack instead of overlapping.
+// Bilanço ve sert hareket işaretleri üst üste binmesin diye tek eklentiyi paylaşır.
+function applyMarkers(markersPlugin, earningsData, earningsVisible, movesData, movesVisible) {
   if (!markersPlugin) return;
-  if (!visible || !earningsData) {
-    markersPlugin.setMarkers([]);
-    return;
+  const markers = [];
+  if (earningsVisible && earningsData) {
+    earningsData.events.forEach((ev) => {
+      markers.push({
+        time: ev.date,
+        position: 'belowBar',
+        shape: 'circle',
+        color: reactionColor(ev.reactionPct),
+        text: 'B',
+      });
+    });
   }
-  markersPlugin.setMarkers(
-    earningsData.events.map((ev) => ({
-      time: ev.date,
-      position: 'belowBar',
-      shape: 'circle',
-      color: reactionColor(ev.reactionPct),
-      text: 'B',
-    }))
-  );
+  if (movesVisible && movesData) {
+    movesData.moves.forEach((move) => {
+      const up = move.pct >= 0;
+      const count = move.disclosures.filter((d) => !d.routine).length;
+      markers.push({
+        time: move.date,
+        position: up ? 'belowBar' : 'aboveBar',
+        shape: up ? 'arrowUp' : 'arrowDown',
+        color: up ? '#26a69a' : '#ef5350',
+        text: count > 0 ? String(count) : '',
+      });
+    });
+  }
+  markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+  markersPlugin.setMarkers(markers);
 }
 
 // Crosshair `time` may come back as a BusinessDay object even when data uses date strings.
@@ -431,6 +456,9 @@ function App() {
   const earningsRef = useRef(null);
   const earningsMarkersRef = useRef(null);
   const earningsVisibleRef = useRef(true);
+  const movesRef = useRef(null);
+  const movesVisibleRef = useRef(true);
+  const [moveDetail, setMoveDetail] = useState(null);
   const [earningsTip, setEarningsTip] = useState(null);
   const [barChangeTip, setBarChangeTip] = useState(null);
   const [earningsNext, setEarningsNext] = useState(null);
@@ -482,10 +510,15 @@ function App() {
       return;
     }
 
-    if (groupId === 'earnings') {
-      earningsVisibleRef.current = nextVisible;
-      applyEarnings(earningsMarkersRef.current, earningsRef.current, nextVisible);
-      if (!nextVisible) setEarningsTip(null);
+    if (groupId === 'earnings' || groupId === 'moves') {
+      if (groupId === 'earnings') {
+        earningsVisibleRef.current = nextVisible;
+        if (!nextVisible) setEarningsTip(null);
+      } else {
+        movesVisibleRef.current = nextVisible;
+        if (!nextVisible) setMoveDetail(null);
+      }
+      refreshMarkers();
       return;
     }
 
@@ -514,14 +547,28 @@ function App() {
     });
     applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, target);
     earningsVisibleRef.current = target;
-    applyEarnings(earningsMarkersRef.current, earningsRef.current, target);
-    if (!target) setEarningsTip(null);
+    movesVisibleRef.current = target;
+    refreshMarkers();
+    if (!target) {
+      setEarningsTip(null);
+      setMoveDetail(null);
+    }
 
     const chart = chartRef.current;
     if (chart) {
       rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
       renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     }
+  }
+
+  function refreshMarkers() {
+    applyMarkers(
+      earningsMarkersRef.current,
+      earningsRef.current,
+      earningsVisibleRef.current,
+      movesRef.current,
+      movesVisibleRef.current
+    );
   }
 
   function clearSelection() {
@@ -599,6 +646,11 @@ function App() {
 
     if (!tool) {
       handleSelectDrawing(param.point.x, param.point.y);
+      if (!selectedDrawingRef.current && movesVisibleRef.current && param.time) {
+        const date = timeToISO(param.time);
+        const move = movesRef.current?.moves.find((m) => m.date === date);
+        if (move) setMoveDetail(move);
+      }
       return;
     }
 
@@ -821,7 +873,8 @@ function App() {
         applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
         earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
         earningsVisibleRef.current = visibility.earnings;
-        applyEarnings(earningsMarkersRef.current, earningsRef.current, visibility.earnings);
+        movesVisibleRef.current = visibility.moves;
+        refreshMarkers();
         const lastIdx = loadedData.length - 1;
         const dailyChange = new DailyChangePrimitive();
         dailyChange.setValue(
@@ -837,6 +890,16 @@ function App() {
         });
 
         chart.subscribeClick(handleChartClick);
+
+        // Loaded in the background: the first call may download XU100 history and take a while.
+        // Arka planda yüklenir: ilk çağrı XU100 geçmişini indirebildiği için uzun sürebilir.
+        fetchMoves(symbol)
+          .then((movesData) => {
+            if (cancelled) return;
+            movesRef.current = movesData;
+            refreshMarkers();
+          })
+          .catch(() => {});
         chart.subscribeCrosshairMove(handleCrosshairMove);
 
         const eventsByDate = new Map((earningsData?.events || []).map((ev) => [ev.date, ev]));
@@ -900,6 +963,8 @@ function App() {
       setEarningsTip(null);
       setBarChangeTip(null);
       setEarningsNext(null);
+      movesRef.current = null;
+      setMoveDetail(null);
       patternHighlightRef.current = null;
       patternRequestRef.current += 1;
       setPatternSearch(null);
@@ -1205,6 +1270,8 @@ function App() {
       <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
 
       {patternSearch && <PatternSearchWidget state={patternSearch} onClose={handleClosePatternSearch} />}
+
+      {moveDetail && <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />}
 
       {barChangeTip && (
         <div

@@ -20,9 +20,9 @@ import borsapy as bp
 from borsapy._providers.kap import get_kap_provider
 
 import price_cache
+from kap import query_year
 from data_provider import get_quarterly_net_income
 
-KAP_QUERY_URL = "https://www.kap.org.tr/tr/api/disclosure/members/byCriteria"
 YEARS_BACK = 3
 REACTION_DAYS = 5
 # Announcements before this hour get a same-day price reaction.
@@ -31,38 +31,6 @@ MARKET_OPEN_HOUR = 10
 CACHE_TTL = 3600
 
 _cache: dict[str, tuple[float, dict]] = {}
-
-
-def _query_kap_year(client, member_oid: str, year: int) -> list[dict]:
-    body = {
-        "fromDate": f"{year}-01-01",
-        "toDate": f"{year}-12-31",
-        "memberType": "IGS",
-        "mkkMemberOidList": [member_oid],
-        "disclosureClass": "FR",
-        "inactiveMkkMemberOidList": [],
-        "subjectList": [],
-        "isLate": "",
-        "mainSector": "",
-        "sector": "",
-        "subSector": "",
-        "marketOidList": [],
-        "index": "",
-        "bdkReview": "",
-        "bdkMemberOidList": [],
-        "year": "",
-        "term": "",
-        "ruleType": "",
-        "period": "",
-        "fromSrc": False,
-        "srcCategory": "",
-        "discIndex": [],
-    }
-    try:
-        items = client.post(KAP_QUERY_URL, json=body, timeout=15).json()
-    except Exception:
-        return []
-    return items if isinstance(items, list) else []
 
 
 def _fetch_announcements(symbol: str) -> list[dict]:
@@ -79,7 +47,7 @@ def _fetch_announcements(symbol: str) -> list[dict]:
     this_year = datetime.now().year
     by_period: dict[tuple[int, int], dict] = {}
     for year in range(this_year - YEARS_BACK, this_year + 1):
-        for item in _query_kap_year(kap._client, member_oid, year):
+        for item in query_year(kap._client, member_oid, year, "FR") or []:
             if item.get("subject") != "Finansal Rapor":
                 continue
             try:

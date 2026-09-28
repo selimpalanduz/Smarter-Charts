@@ -7,6 +7,8 @@ from volume_scanner import get_scan
 from sr_zones import get_sr_zones
 from earnings import get_earnings
 from pattern_search import find_similar
+from moves import get_moves
+from kap import get_text
 
 app = FastAPI()
 
@@ -57,3 +59,19 @@ def get_similar_patterns(symbol: str, start: str, end: str):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Formasyon araması başarısız: {e}")
+
+
+@app.get("/api/moves/{symbol}")
+def get_sharp_moves(symbol: str):
+    try:
+        return get_moves(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Sert hareketler hesaplanamadı: {e}")
+
+
+@app.get("/api/kap/disclosure/{disclosure_id}")
+def get_disclosure_text(disclosure_id: int):
+    try:
+        return {"id": disclosure_id, "text": get_text(disclosure_id)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Bildirim metni alınamadı: {e}")
