@@ -7,7 +7,13 @@ import {
   CrosshairMode,
   createSeriesMarkers,
 } from 'lightweight-charts';
-import { TrendLinePrimitive, RectanglePrimitive, HorizontalLinePrimitive, SRZonePrimitive } from './drawingTools.js';
+import {
+  TrendLinePrimitive,
+  RectanglePrimitive,
+  HorizontalLinePrimitive,
+  SRZonePrimitive,
+  DailyChangePrimitive,
+} from './drawingTools.js';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
 
 const CHUNK_MONTHS = 6;
@@ -302,6 +308,17 @@ function formatPct(value) {
   return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
 }
 
+// rows[i] barının bir önceki kapanışa göre % değişimi.
+function dailyChangePct(rows, i) {
+  const prev = rows[i - 1]?.Close;
+  if (i < 1 || !prev) return null;
+  return (rows[i].Close / prev - 1) * 100;
+}
+
+function formatChange(pct) {
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
+}
+
 function formatDateTR(iso) {
   const [y, m, d] = iso.slice(0, 10).split('-');
   return `${d}.${m}.${y}${iso.length > 10 ? ' ' + iso.slice(11) : ''}`;
@@ -397,6 +414,7 @@ function App() {
   const earningsMarkersRef = useRef(null);
   const earningsVisibleRef = useRef(true);
   const [earningsTip, setEarningsTip] = useState(null);
+  const [barChangeTip, setBarChangeTip] = useState(null);
   const [earningsNext, setEarningsNext] = useState(null);
 
   const [symbol, setSymbol] = useState('THYAO');
@@ -735,6 +753,12 @@ function App() {
         earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
         earningsVisibleRef.current = visibility.earnings;
         applyEarnings(earningsMarkersRef.current, earningsRef.current, visibility.earnings);
+        const lastIdx = loadedData.length - 1;
+        const dailyChange = new DailyChangePrimitive();
+        dailyChange.setValue(
+          lastIdx >= 1 ? { price: loadedData[lastIdx].Close, pct: dailyChangePct(loadedData, lastIdx) } : null
+        );
+        seriesMapRef.current.candle.attachPrimitive(dailyChange);
         chart.timeScale().fitContent();
 
         chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -755,6 +779,22 @@ function App() {
             return;
           }
           setEarningsTip({ x: param.point.x, y: param.point.y, event: ev });
+        });
+
+        // Son bar hariç, imlecin üzerinde olduğu barın günlük % değişimi.
+        chart.subscribeCrosshairMove((param) => {
+          const rows = loadedDataRef.current;
+          const date = param.time && param.point ? timeToISO(param.time) : null;
+          const i = date ? rows.findIndex((row) => dateOf(row) === date) : -1;
+          const pct = i >= 1 && i < rows.length - 1 ? dailyChangePct(rows, i) : null;
+          const candle = seriesMapRef.current.candle;
+          const x = pct != null ? chart.timeScale().timeToCoordinate(param.time) : null;
+          const y = pct != null ? candle?.priceToCoordinate(rows[i].High) : null;
+          if (x == null || y == null) {
+            setBarChangeTip((prev) => (prev ? null : prev));
+            return;
+          }
+          setBarChangeTip({ x, y, pct });
         });
 
         const resizeObserver = new ResizeObserver((entries) => {
@@ -788,6 +828,7 @@ function App() {
       earningsRef.current = null;
       earningsMarkersRef.current = null;
       setEarningsTip(null);
+      setBarChangeTip(null);
       setEarningsNext(null);
       pendingPointRef.current = null;
       previewPrimitiveRef.current = null;
@@ -1089,6 +1130,28 @@ function App() {
       )}
 
       <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
+
+      {barChangeTip && (
+        <div
+          style={{
+            position: 'absolute',
+            left: barChangeTip.x,
+            top: barChangeTip.y - 8,
+            transform: 'translate(-50%, -100%)',
+            zIndex: 25,
+            padding: '2px 6px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: 600,
+            color: '#ffffff',
+            background: reactionColor(barChangeTip.pct),
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {formatChange(barChangeTip.pct)}
+        </div>
+      )}
 
       {earningsTip && (
         <div

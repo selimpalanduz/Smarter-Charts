@@ -336,3 +336,61 @@ export class HorizontalLinePrimitive {
     ctx.restore();
   }
 }
+// Son barın günlük % değişimini fiyat ekseninde, son fiyat etiketinin hemen
+// altında gösterir. Etiket çakışmayı önlemek için otomatik kaydırılabilir.
+const DAILY_CHANGE_LABEL_OFFSET = 20;
+
+export class DailyChangePrimitive {
+  constructor() {
+    this._series = null;
+    this._value = null;
+    this._axisViews = [new DailyChangeAxisView(this)];
+  }
+  attached({ series }) {
+    this._series = series;
+  }
+  detached() {
+    this._series = null;
+  }
+  // value: { price, pct } | null
+  setValue(value) {
+    this._value = value;
+  }
+  updateAllViews() {}
+  priceAxisViews() {
+    return this._axisViews;
+  }
+}
+
+class DailyChangeAxisView {
+  constructor(source) {
+    this._source = source;
+  }
+  _y() {
+    const { _series: series, _value: value } = this._source;
+    if (!series || !value) return null;
+    return series.priceToCoordinate(value.price);
+  }
+  coordinate() {
+    const y = this._y();
+    return y == null ? -1000 : y + DAILY_CHANGE_LABEL_OFFSET;
+  }
+  text() {
+    const pct = this._source._value?.pct;
+    if (pct == null) return '';
+    return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
+  }
+  textColor() {
+    return '#ffffff';
+  }
+  backColor() {
+    const pct = this._source._value?.pct;
+    return pct >= 0 ? '#26a69a' : '#ef5350';
+  }
+  visible() {
+    return this._y() != null;
+  }
+  tickVisible() {
+    return false;
+  }
+}
