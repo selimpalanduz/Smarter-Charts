@@ -1,4 +1,12 @@
-"""Yerel SQLite fiyat önbelleği.
+"""Local SQLite price cache.
+
+The idea is simple: historical price data never changes. The first time a
+symbol is seen, its full history is fetched once and stored here. Every
+later request checks here first instead of going to TradingView; only
+requests that look "current" (end date close to today) refresh the last
+few days, at most once every few minutes.
+
+Yerel SQLite fiyat önbelleği.
 
 Fikir basit: geçmiş fiyat verisi asla değişmiyor. Bir sembolü ilk kez
 gördüğümüzde elimizdeki tüm geçmişi bir kere çekip burada saklıyoruz.
@@ -19,7 +27,9 @@ DB_PATH = Path(__file__).parent / "data" / "prices.db"
 DB_PATH.parent.mkdir(exist_ok=True)
 
 REFRESH_WINDOW_DAYS = 14
-REFRESH_CHECK_INTERVAL = 300  # saniye
+# seconds
+# saniye
+REFRESH_CHECK_INTERVAL = 300
 
 _last_refresh_check: dict[str, float] = {}
 
@@ -78,6 +88,12 @@ def _has_symbol(conn: sqlite3.Connection, symbol: str) -> bool:
 
 def _backfill_full_history(symbol: str) -> pd.DataFrame:
     """
+    borsapy's period='max' option hits TradingView's per-request depth limit
+    (for some stocks it cuts off a few decades back) even though much older
+    data may exist. The same "fetch backwards chunk by chunk" logic as the
+    frontend is applied here during the initial seed: step back in 2-year
+    slices until an empty response is returned.
+
     borsapy'nin period='max' seçeneği, TradingView'in tek istekteki
     derinlik sınırına takılıyor (bazı hisselerde birkaç on yıl önce
     kesiliyor) - oysa gerçekte çok daha eskiye veri olabiliyor.
@@ -88,7 +104,9 @@ def _backfill_full_history(symbol: str) -> pd.DataFrame:
     ticker = bp.Ticker(symbol)
     chunks = []
     end = datetime.now()
-    earliest_sane_year = 1985  # güvenlik sınırı, sonsuz döngüye girmesin diye
+    # Safety limit to avoid an infinite loop.
+    # Güvenlik sınırı, sonsuz döngüye girmesin diye.
+    earliest_sane_year = 1985
 
     while end.year >= earliest_sane_year:
         start = end - timedelta(days=730)
@@ -112,7 +130,11 @@ def _backfill_full_history(symbol: str) -> pd.DataFrame:
 
 
 def ensure_cached(symbol: str) -> None:
-    """Sembol hiç görülmediyse, gerçek en eskiye kadar parça parça çeker."""
+    """
+    If the symbol has never been seen, fetches it chunk by chunk back to the earliest available date.
+
+    Sembol hiç görülmediyse, gerçek en eskiye kadar parça parça çeker.
+    """
     conn = _get_connection()
     try:
         if _has_symbol(conn, symbol):
@@ -125,6 +147,9 @@ def ensure_cached(symbol: str) -> None:
 
 def maybe_refresh_recent(symbol: str, requested_end: str) -> None:
     """
+    If the requested range ends close to today, refreshes the last few days,
+    but tries at most once every REFRESH_CHECK_INTERVAL seconds per symbol.
+
     İstenen aralığın sonu bugüne yakınsa, son birkaç günü tazeler — ama
     aynı sembol için en fazla REFRESH_CHECK_INTERVAL saniyede bir dener.
     """
@@ -144,7 +169,9 @@ def maybe_refresh_recent(symbol: str, requested_end: str) -> None:
         df = bp.Ticker(symbol).history(start=refresh_start.strftime("%Y-%m-%d"))
         _upsert(conn, symbol, df)
     except Exception:
-        pass  # tazeleme başarısız olsa da eldeki önbellek geçerliliğini korur
+        # Even if the refresh fails, the existing cache remains valid.
+        # Tazeleme başarısız olsa da eldeki önbellek geçerliliğini korur.
+        pass
     finally:
         conn.close()
 

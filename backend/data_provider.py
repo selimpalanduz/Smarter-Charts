@@ -17,12 +17,19 @@ ISYATIRIM_MALITABLO_URL = (
 
 _fundamentals_cache: dict[str, tuple[float, pd.Series]] = {}
 _net_income_cache: dict[str, tuple[float, pd.Series]] = {}
-FUNDAMENTALS_CACHE_TTL = 3600  # saniye — çeyreklik veri bu kadar sık değişmiyor
+# Seconds — quarterly data doesn't change more often than this.
+# Saniye — çeyreklik veri bu kadar sık değişmiyor.
+FUNDAMENTALS_CACHE_TTL = 3600
 NET_INCOME_QUARTERS = 20
 
 
 def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 12) -> pd.Series:
     """
+    borsapy's get_income_stmt() guesses which quarter may have been published
+    based on a FIXED month - it never checks whether data actually exists.
+    So the same İş Yatırım endpoint is queried directly, stepping backwards
+    from the ACTUAL current quarter.
+
     borsapy'nin get_income_stmt() fonksiyonu, hangi çeyreğin yayınlanmış
     olabileceğini SABİT bir aya göre tahmin ediyor - gerçekte veri var mı
     diye hiç sormuyor. Bu yüzden aynı İş Yatırım uç noktasına, ŞU ANKİ
@@ -75,6 +82,12 @@ def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 12) -> pd.Serie
 
 def get_quarterly_net_income(symbol: str) -> pd.Series:
     """
+    İş Yatırım reports year-to-date cumulative figures; the single quarter is
+    obtained by subtracting the previous quarter. If the previous quarter is
+    missing (e.g. the oldest Q4 in the series) the result is left as NaN —
+    otherwise the annual total would be mistaken for a single quarter.
+    Index format: "2026Q2".
+
     İş Yatırım yıl içi kümülatif veriyor; tek çeyreği bulmak için bir önceki
     çeyreği çıkarıyoruz. Önceki çeyrek eksikse (ör. serinin en eski Q4'ü)
     sonucu NaN bırakıyoruz — aksi halde yıllık toplam tek çeyrek sanılır.
@@ -103,6 +116,12 @@ def get_quarterly_net_income(symbol: str) -> pd.Series:
 
 def get_ttm_eps(symbol: str) -> pd.Series:
     """
+    TTM EPS = (net income of the last 4 actual quarters) / (current share count).
+    Share count is computed directly from `get_company_metrics()` plus the
+    cheap "last price" instead of `fast_info` — fast_info downloaded a full
+    year of price history again just to compute 52-week high/low and moving
+    averages that aren't used.
+
     TTM EPS = (son 4 gerçek çeyreğin net kârı) / (güncel hisse sayısı).
     Hisse sayısını `fast_info` yerine doğrudan `get_company_metrics()` +
     ucuz "last price" ile hesaplıyoruz — fast_info, kullanmadığımız 52
@@ -118,7 +137,9 @@ def get_ttm_eps(symbol: str) -> pd.Series:
 
     ticker = bp.Ticker(symbol)
     metrics = ticker._get_isyatirim().get_company_metrics(symbol)
-    last_price = ticker.info.get("last")  # sadece temel kotasyon, ucuz
+    # Basic quote only, cheap.
+    # Sadece temel kotasyon, ucuz.
+    last_price = ticker.info.get("last")
 
     if not metrics.get("market_cap") or not last_price:
         result = pd.Series(dtype=float)

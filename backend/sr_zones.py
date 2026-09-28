@@ -1,4 +1,12 @@
-"""Destek/direnç zone tespiti.
+"""Support/resistance zone detection.
+
+The logic is taken from the SupportResistanceDetector project: pivot points
+(scipy find_peaks) are combined with price density sampling, and prices
+close to each other (within 0.4%) are grouped into a single "zone".
+The difference from the original: data comes from this project's existing
+SQLite price cache (price_cache) instead of yfinance.
+
+Destek/direnç zone tespiti.
 
 Mantık SupportResistanceDetector projesinden alındı: pivot noktaları
 (scipy find_peaks) ile fiyat yoğunluğu örneklemesini birleştirip,
@@ -16,7 +24,9 @@ from scipy.signal import find_peaks
 import price_cache
 
 LOOKBACK_DAYS = 365
-CLUSTER_GAP_PCT = 0.004  # bu yüzdeden yakın fiyatlar aynı zone'a girer
+# Prices closer than this percentage fall into the same zone.
+# Bu yüzdeden yakın fiyatlar aynı zone'a girer.
+CLUSTER_GAP_PCT = 0.004
 EXTREME_TOLERANCE_PCT = 0.005
 PIVOT_DISTANCE = 5
 MAX_SUPPORTS = 8
@@ -107,6 +117,12 @@ def find_sr_levels(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
 
 def get_sr_zones(symbol: str) -> dict:
     """
+    The price cache is NOT warmed separately here (no ensure_cached /
+    maybe_refresh_recent calls) - /api/price already does that for the same
+    symbol. Calling both in parallel sent duplicate simultaneous requests to
+    TradingView and caused 429s (rate limit). The frontend calls this endpoint
+    AFTER the price request, so the cache is already warm here.
+
     Fiyat cache'ini burada AYRICA ısıtmıyoruz (ensure_cached/maybe_refresh_recent
     çağırmıyoruz) - /api/price zaten aynı sembol için bunu yapıyor. İkisini
     paralel çağırmak TradingView'e aynı anda çifte istek atıp 429'a

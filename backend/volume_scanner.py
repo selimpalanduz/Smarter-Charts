@@ -1,4 +1,10 @@
-"""Hacim anomalisi taraması.
+"""Volume anomaly scan.
+
+Instead of fetching history for each symbol separately, a single request is
+sent to the TradingView screener: the latest volume and 10-day average
+volume for the whole BIST list come back precomputed on the server side.
+
+Hacim anomalisi taraması.
 
 Her sembol için ayrı ayrı geçmiş çekmek yerine TradingView screener'ına
 tek bir istek atıyoruz: tüm BIST listesinin son hacmi ve 10 günlük
@@ -65,6 +71,8 @@ def _run_scan() -> list[dict]:
 
 
 def _get_year_history(symbol: str) -> pd.DataFrame | None:
+    # Not written to the SQLite cache: there, a symbol's presence means "full
+    # history fetched", and 1 year of partial data would break that assumption.
     # SQLite önbelleğine yazmıyoruz: orada bir sembolün varlığı "tüm geçmiş
     # çekildi" anlamına geliyor, 1 yıllık kısmi veri o varsayımı bozar.
     now = time.time()
@@ -82,7 +90,11 @@ def _get_year_history(symbol: str) -> pd.DataFrame | None:
 
 
 def _find_breakout(row: dict) -> float | None:
-    """Son bardan önceki veriyle direnç bulur; son kapanış onu aştıysa seviyeyi döner."""
+    """
+    Finds resistance using data before the last bar; returns the level if the last close broke above it.
+
+    Son bardan önceki veriyle direnç bulur; son kapanış onu aştıysa seviyeyi döner.
+    """
     df = _get_year_history(row["Symbol"])
     if df is None:
         return None

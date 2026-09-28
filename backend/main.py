@@ -1,15 +1,18 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from data_provider import get_price_history
 from volume_scanner import get_scan
 from sr_zones import get_sr_zones
 from earnings import get_earnings
+from pattern_search import find_similar
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -44,3 +47,13 @@ def get_earnings_markers(symbol: str):
         return get_earnings(symbol)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Bilanço verisi alınamadı: {e}")
+
+
+@app.get("/api/patterns/{symbol}")
+def get_similar_patterns(symbol: str, start: str, end: str):
+    try:
+        return find_similar(symbol, start, end)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Formasyon araması başarısız: {e}")

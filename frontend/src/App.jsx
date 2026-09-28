@@ -15,6 +15,8 @@ import {
   DailyChangePrimitive,
 } from './drawingTools.js';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
+import PatternSearchWidget from './PatternSearchWidget.jsx';
+import { API_BASE } from './config.js';
 
 const CHUNK_MONTHS = 6;
 const EDGE_THRESHOLD = 10;
@@ -230,11 +232,15 @@ const DRAWING_TOOLS = [
   { id: 'horizontal', label: 'Horizontal Line', clicksNeeded: 1 },
   { id: 'trendline', label: 'Trend Line', clicksNeeded: 2 },
   { id: 'rectangle', label: 'Rectangle', clicksNeeded: 2 },
+  { id: 'pattern', label: 'Formasyon Ara', clicksNeeded: 2 },
 ];
+
+const TWO_POINT_TOOLS = ['trendline', 'rectangle', 'pattern'];
+const PATTERN_HIGHLIGHT = { fillColor: 'rgba(245, 158, 11, 0.12)', borderColor: '#f59e0b' };
 
 async function fetchRange(symbol, start, end) {
   const toISO = (d) => d.toISOString().slice(0, 10);
-  const url = `http://127.0.0.1:8000/api/price/${symbol}?start=${toISO(start)}&end=${toISO(end)}`;
+  const url = `${API_BASE}/api/price/${symbol}?start=${toISO(start)}&end=${toISO(end)}`;
   const res = await fetch(url);
   if (!res.ok) {
     let detail = `Server error: ${res.status}`;
@@ -249,15 +255,23 @@ async function fetchRange(symbol, start, end) {
   return res.json();
 }
 
+async function fetchPatterns(symbol, start, end) {
+  const url = `${API_BASE}/api/patterns/${symbol}?start=${start}&end=${end}`;
+  const res = await fetch(url);
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.detail || `Server error: ${res.status}`);
+  return body;
+}
+
 async function fetchSrZones(symbol) {
-  const url = `http://127.0.0.1:8000/api/sr/${symbol}`;
+  const url = `${API_BASE}/api/sr/${symbol}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
   return res.json();
 }
 
 async function fetchEarnings(symbol) {
-  const url = `http://127.0.0.1:8000/api/earnings/${symbol}`;
+  const url = `${API_BASE}/api/earnings/${symbol}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
   return res.json();
@@ -285,6 +299,7 @@ function applyEarnings(markersPlugin, earningsData, visible) {
   );
 }
 
+// Crosshair `time` may come back as a BusinessDay object even when data uses date strings.
 // Crosshair `time` string olarak verilen veride BusinessDay nesnesi olarak dönebiliyor.
 function timeToISO(time) {
   if (typeof time === 'string') return time;
@@ -308,6 +323,7 @@ function formatPct(value) {
   return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
 }
 
+// Percent change of bar rows[i] relative to the previous close.
 // rows[i] barının bir önceki kapanışa göre % değişimi.
 function dailyChangePct(rows, i) {
   const prev = rows[i - 1]?.Close;
@@ -403,7 +419,9 @@ function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [visibility, setVisibility] = useState(() => {
     const v = Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, true]));
-    v.srZones = false; // opsiyonel özellik, varsayılan kapalı
+    // Optional feature, off by default.
+    // Opsiyonel özellik, varsayılan kapalı.
+    v.srZones = false;
     return v;
   });
 
@@ -425,6 +443,10 @@ function App() {
   const pendingPointRef = useRef(null);
   const drawingsRef = useRef([]);
   const previewPrimitiveRef = useRef(null);
+
+  const patternHighlightRef = useRef(null);
+  const [patternSearch, setPatternSearch] = useState(null);
+  const patternRequestRef = useRef(0);
 
   const [selectedDrawing, setSelectedDrawing] = useState(null);
   const selectedDrawingRef = useRef(null);
@@ -606,6 +628,12 @@ function App() {
       previewPrimitiveRef.current = null;
     }
 
+    if (tool === 'pattern') {
+      runPatternSearch(p1.time, p2.time);
+      setActiveTool(null);
+      return;
+    }
+
     const primitive =
       tool === 'trendline' ? new TrendLinePrimitive(p1, p2) : new RectanglePrimitive(p1, p2);
     series.attachPrimitive(primitive);
@@ -613,9 +641,46 @@ function App() {
     setActiveTool(null);
   }
 
+  function clearPatternHighlight() {
+    if (patternHighlightRef.current) {
+      seriesMapRef.current.candle?.detachPrimitive(patternHighlightRef.current);
+      patternHighlightRef.current = null;
+    }
+  }
+
+  async function runPatternSearch(timeA, timeB) {
+    const [start, end] = [timeToISO(timeA), timeToISO(timeB)].sort();
+    const rows = loadedDataRef.current.filter((row) => dateOf(row) >= start && dateOf(row) <= end);
+    const series = seriesMapRef.current.candle;
+
+    clearPatternHighlight();
+    if (series && rows.length > 0) {
+      const high = Math.max(...rows.map((row) => row.High));
+      const low = Math.min(...rows.map((row) => row.Low));
+      const highlight = new RectanglePrimitive({ time: start, price: high }, { time: end, price: low }, PATTERN_HIGHLIGHT);
+      series.attachPrimitive(highlight);
+      patternHighlightRef.current = highlight;
+    }
+
+    const requestId = ++patternRequestRef.current;
+    setPatternSearch({ loading: true, error: null, data: null });
+    try {
+      const data = await fetchPatterns(symbol, start, end);
+      if (requestId === patternRequestRef.current) setPatternSearch({ loading: false, error: null, data });
+    } catch (err) {
+      if (requestId === patternRequestRef.current) setPatternSearch({ loading: false, error: err.message, data: null });
+    }
+  }
+
+  function handleClosePatternSearch() {
+    patternRequestRef.current += 1;
+    clearPatternHighlight();
+    setPatternSearch(null);
+  }
+
   function handleCrosshairMove(param) {
     const tool = activeToolRef.current;
-    if (!pendingPointRef.current || (tool !== 'trendline' && tool !== 'rectangle')) return;
+    if (!pendingPointRef.current || !TWO_POINT_TOOLS.includes(tool)) return;
     if (!param.point || !param.time) return;
 
     const series = seriesMapRef.current.candle;
@@ -628,7 +693,8 @@ function App() {
 
     if (!previewPrimitiveRef.current) {
       const PrimitiveClass = tool === 'trendline' ? TrendLinePrimitive : RectanglePrimitive;
-      const preview = new PrimitiveClass(p1, p2, { preview: true });
+      const extra = tool === 'pattern' ? PATTERN_HIGHLIGHT : {};
+      const preview = new PrimitiveClass(p1, p2, { preview: true, ...extra });
       series.attachPrimitive(preview);
       previewPrimitiveRef.current = preview;
     } else {
@@ -702,6 +768,9 @@ function App() {
         const start = new Date();
         start.setMonth(start.getMonth() - CHUNK_MONTHS);
 
+        // S/R zones are fetched AFTER price data, sequentially - fetching both at
+        // once made each try to refresh the price cache simultaneously and
+        // triggered 429 (rate limit) responses from TradingView.
         // SR zonelarını fiyat verisinden SONRA, sırayla çekiyoruz - aynı anda
         // çekmek ikisinin de fiyat cache'ini aynı anda tazelemeye çalışmasına
         // ve TradingView'den 429 (rate limit) almasına yol açıyordu.
@@ -781,6 +850,7 @@ function App() {
           setEarningsTip({ x: param.point.x, y: param.point.y, event: ev });
         });
 
+        // Daily % change of the hovered bar, excluding the last bar.
         // Son bar hariç, imlecin üzerinde olduğu barın günlük % değişimi.
         chart.subscribeCrosshairMove((param) => {
           const rows = loadedDataRef.current;
@@ -830,6 +900,9 @@ function App() {
       setEarningsTip(null);
       setBarChangeTip(null);
       setEarningsNext(null);
+      patternHighlightRef.current = null;
+      patternRequestRef.current += 1;
+      setPatternSearch(null);
       pendingPointRef.current = null;
       previewPrimitiveRef.current = null;
       selectedDrawingRef.current = null;
@@ -1130,6 +1203,8 @@ function App() {
       )}
 
       <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
+
+      {patternSearch && <PatternSearchWidget state={patternSearch} onClose={handleClosePatternSearch} />}
 
       {barChangeTip && (
         <div

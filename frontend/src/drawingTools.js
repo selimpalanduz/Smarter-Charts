@@ -336,8 +336,8 @@ export class HorizontalLinePrimitive {
     ctx.restore();
   }
 }
-// Son barın günlük % değişimini fiyat ekseninde, son fiyat etiketinin hemen
-// altında gösterir. Etiket çakışmayı önlemek için otomatik kaydırılabilir.
+// Daily % change of the last bar, shown on the price axis below the last price label.
+// Son barın günlük % değişimi, fiyat ekseninde son fiyat etiketinin altında.
 const DAILY_CHANGE_LABEL_OFFSET = 20;
 
 export class DailyChangePrimitive {
@@ -352,7 +352,6 @@ export class DailyChangePrimitive {
   detached() {
     this._series = null;
   }
-  // value: { price, pct } | null
   setValue(value) {
     this._value = value;
   }

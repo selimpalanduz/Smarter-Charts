@@ -1,4 +1,11 @@
-"""Bilanço açıklama işaretleri.
+"""Earnings announcement markers.
+
+The announcement time comes from KAP (to the second), net income from
+İş Yatırım, and the price reaction from the local price cache. The KAP
+query API accepts at most a ~1-year range per request, so it is queried
+year by year.
+
+Bilanço açıklama işaretleri.
 
 Açıklanma anı KAP'tan (saniyesine kadar), net kâr İş Yatırım'dan, fiyat
 tepkisi yerel fiyat önbelleğinden gelir. KAP sorgu API'si tek istekte en
@@ -18,7 +25,9 @@ from data_provider import get_quarterly_net_income
 KAP_QUERY_URL = "https://www.kap.org.tr/tr/api/disclosure/members/byCriteria"
 YEARS_BACK = 3
 REACTION_DAYS = 5
-MARKET_OPEN_HOUR = 10  # bu saatten önceki açıklamaya fiyat aynı gün tepki verir
+# Announcements before this hour get a same-day price reaction.
+# Bu saatten önceki açıklamaya fiyat aynı gün tepki verir.
+MARKET_OPEN_HOUR = 10
 CACHE_TTL = 3600
 
 _cache: dict[str, tuple[float, dict]] = {}
@@ -57,7 +66,11 @@ def _query_kap_year(client, member_oid: str, year: int) -> list[dict]:
 
 
 def _fetch_announcements(symbol: str) -> list[dict]:
-    """Her (yıl, çeyrek) için ilk 'Finansal Rapor' bildirimi; düzeltmeler elenir."""
+    """
+    The first 'Financial Report' disclosure for each (year, quarter); corrections are dropped.
+
+    Her (yıl, çeyrek) için ilk 'Finansal Rapor' bildirimi; düzeltmeler elenir.
+    """
     kap = get_kap_provider()
     member_oid = kap.get_member_oid(symbol)
     if not member_oid:
@@ -86,7 +99,11 @@ def _fetch_announcements(symbol: str) -> list[dict]:
 
 
 def _price_reaction(closes: list[tuple[str, float]], published: datetime) -> tuple[str | None, float | None, int]:
-    """(tepki günü, % değişim, kaç işlem günü kullanıldı)."""
+    """
+    (reaction day, % change, number of trading days used).
+
+    (tepki günü, % değişim, kaç işlem günü kullanıldı).
+    """
     effective = published.date() if published.hour < MARKET_OPEN_HOUR else published.date() + timedelta(days=1)
     effective_str = effective.isoformat()
 
@@ -119,6 +136,9 @@ def _clean(value) -> float | None:
 
 def get_earnings(symbol: str) -> dict:
     """
+    The price cache is not warmed here; the frontend calls this endpoint
+    after the price request (see sr_zones.get_sr_zones).
+
     Fiyat önbelleğini burada ısıtmıyoruz; frontend bu endpoint'i fiyat
     isteğinden sonra çağırıyor (bkz. sr_zones.get_sr_zones).
     """
