@@ -1,3 +1,5 @@
+import { colors } from './theme.js';
+
 class BasePaneView {
   constructor(source) {
     this._source = source;
@@ -19,7 +21,7 @@ function drawHandle(ctx, x, y, color) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, 4, 0, Math.PI * 2);
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = colors().chartBg;
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = color;
@@ -42,7 +44,7 @@ export class TrendLinePrimitive {
   constructor(p1, p2, options = {}) {
     this._p1 = p1;
     this._p2 = p2;
-    this._options = { color: '#2962ff', lineWidth: 2, preview: false, ...options };
+    this._options = { lineWidth: 2, preview: false, ...options };
     this._selected = false;
     this._extendLeft = false;
     this._extendRight = false;
@@ -123,7 +125,7 @@ export class TrendLinePrimitive {
     }
 
     ctx.save();
-    ctx.strokeStyle = this._options.color;
+    ctx.strokeStyle = this._options.color ?? colors().drawing;
     ctx.lineWidth = this._selected ? this._options.lineWidth + 1.5 : this._options.lineWidth;
     if (this._options.preview) {
       ctx.setLineDash([6, 4]);
@@ -136,8 +138,8 @@ export class TrendLinePrimitive {
     ctx.restore();
 
     if (this._selected) {
-      drawHandle(ctx, x1, y1, this._options.color);
-      drawHandle(ctx, x2, y2, this._options.color);
+      drawHandle(ctx, x1, y1, this._options.color ?? colors().drawing);
+      drawHandle(ctx, x2, y2, this._options.color ?? colors().drawing);
     }
   }
 }
@@ -147,8 +149,6 @@ export class RectanglePrimitive {
     this._p1 = p1;
     this._p2 = p2;
     this._options = {
-      fillColor: 'rgba(41, 98, 255, 0.15)',
-      borderColor: '#2962ff',
       preview: false,
       ...options,
     };
@@ -211,16 +211,16 @@ export class RectanglePrimitive {
       ctx.setLineDash([6, 4]);
       ctx.globalAlpha = 0.7;
     }
-    ctx.fillStyle = this._options.fillColor;
+    ctx.fillStyle = this._options.fillColor ?? colors().drawingFill;
     ctx.fillRect(c.left, c.top, c.right - c.left, c.bottom - c.top);
-    ctx.strokeStyle = this._options.borderColor;
+    ctx.strokeStyle = this._options.borderColor ?? colors().drawing;
     ctx.lineWidth = this._selected ? 2.5 : 1;
     ctx.strokeRect(c.left, c.top, c.right - c.left, c.bottom - c.top);
     ctx.restore();
 
     if (this._selected) {
-      drawHandle(ctx, c.x1, c.y1, this._options.borderColor);
-      drawHandle(ctx, c.x2, c.y2, this._options.borderColor);
+      drawHandle(ctx, c.x1, c.y1, this._options.borderColor ?? colors().drawing);
+      drawHandle(ctx, c.x2, c.y2, this._options.borderColor ?? colors().drawing);
     }
   }
 }
@@ -258,7 +258,7 @@ export class SRZonePrimitive {
     const yMean = this._series.priceToCoordinate(this._zone.mean);
 
     ctx.save();
-    ctx.fillStyle = this._options.fillColor;
+    ctx.fillStyle = this._options.fillColor ?? colors().drawingFill;
     ctx.fillRect(0, yTop, mediaSize.width, Math.max(1, yBottom - yTop));
 
     if (yMean !== null) {
@@ -287,7 +287,7 @@ export class SRZonePrimitive {
 export class HorizontalLinePrimitive {
   constructor(price, options = {}) {
     this._price = price;
-    this._options = { color: '#eda100', lineWidth: 1, ...options };
+    this._options = { lineWidth: 1, ...options };
     this._selected = false;
     this._paneViews = [new BasePaneView(this)];
     this._chart = null;
@@ -326,7 +326,7 @@ export class HorizontalLinePrimitive {
     if (y === null) return;
 
     ctx.save();
-    ctx.strokeStyle = this._options.color;
+    ctx.strokeStyle = this._options.color ?? colors().drawing;
     ctx.lineWidth = this._selected ? this._options.lineWidth + 1.5 : this._options.lineWidth;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
@@ -380,11 +380,11 @@ class DailyChangeAxisView {
     return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
   }
   textColor() {
-    return '#ffffff';
+    return colors().chartBg;
   }
   backColor() {
     const pct = this._source._value?.pct;
-    return pct >= 0 ? '#26a69a' : '#ef5350';
+    return pct >= 0 ? colors().up : colors().down;
   }
   visible() {
     return this._y() != null;

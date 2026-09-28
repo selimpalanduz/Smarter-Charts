@@ -19,84 +19,26 @@ import PatternSearchWidget from './PatternSearchWidget.jsx';
 import MoveReasonsWidget from './MoveReasonsWidget.jsx';
 import { API_BASE } from './config.js';
 import { STRINGS, LangContext } from './i18n.js';
+import { THEME, setPalette, colors } from './theme.js';
+import {
+  LogoMark,
+  CursorIcon,
+  TrendLineIcon,
+  HorizontalLineIcon,
+  RectangleIcon,
+  PatternIcon,
+  ExtendLeftIcon,
+  ExtendRightIcon,
+  DeleteIcon,
+  ClearAllIcon,
+  PanelIcon,
+  SunIcon,
+  MoonIcon,
+} from './icons.jsx';
 
 const CHUNK_MONTHS = 6;
 const EDGE_THRESHOLD = 10;
 const MAIN_PANE_STRETCH = 3;
-
-const THEME = {
-  light: {
-    pageBg: '#f5f6f8',
-    panelBg: 'rgba(255, 255, 255, 0.72)',
-    panelBorder: 'rgba(15, 23, 42, 0.08)',
-    text: '#0f172a',
-    textDim: '#1e293b',
-    btnBg: 'rgba(15, 23, 42, 0.04)',
-    btnBgHover: 'rgba(15, 23, 42, 0.09)',
-    btnBorder: 'rgba(15, 23, 42, 0.1)',
-    inputBg: 'rgba(255, 255, 255, 0.6)',
-    accent: '#3e5c76',
-    accentHover: '#33495e',
-    accentRing: 'rgba(62, 92, 118, 0.15)',
-    chartBg: '#ffffff',
-    chartText: '#333333',
-    gridColor: '#eeeeee',
-    separator: '#787b86',
-    separatorHover: 'rgba(120, 123, 134, 0.2)',
-  },
-  dark: {
-    pageBg: '#0d1117',
-    panelBg: 'rgba(22, 25, 32, 0.72)',
-    panelBorder: 'rgba(255, 255, 255, 0.08)',
-    text: '#e8eaed',
-    textDim: '#c3c9d1',
-    btnBg: 'rgba(255, 255, 255, 0.06)',
-    btnBgHover: 'rgba(255, 255, 255, 0.12)',
-    btnBorder: 'rgba(255, 255, 255, 0.12)',
-    inputBg: 'rgba(255, 255, 255, 0.05)',
-    accent: '#5b7ea3',
-    accentHover: '#6f93b6',
-    accentRing: 'rgba(91, 126, 163, 0.25)',
-    chartBg: '#0d1117',
-    chartText: '#c3c9d1',
-    gridColor: 'rgba(255, 255, 255, 0.06)',
-    separator: 'rgba(255, 255, 255, 0.15)',
-    separatorHover: 'rgba(255, 255, 255, 0.3)',
-  },
-};
-
-function SunIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="4" />
-      <line x1="12" y1="2" x2="12" y2="4" />
-      <line x1="12" y1="20" x2="12" y2="22" />
-      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-      <line x1="2" y1="12" x2="4" y2="12" />
-      <line x1="20" y1="12" x2="22" y2="12" />
-      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-    </svg>
-  );
-}
-
-function PencilIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-    </svg>
-  );
-}
 
 function dateOf(row) {
   return row.Date.slice(0, 10);
@@ -122,7 +64,7 @@ function volumeData(rows) {
   return rows.map((row) => ({
     time: dateOf(row),
     value: row.Volume,
-    color: row.Close >= row.Open ? 'rgba(38,166,154,0.5)' : 'rgba(239,83,80,0.5)',
+    color: row.Close >= row.Open ? colors().upSoft : colors().downSoft,
   }));
 }
 
@@ -132,7 +74,7 @@ function macdHistData(rows) {
     .map((row) => ({
       time: dateOf(row),
       value: row.MACD_Hist,
-      color: row.MACD_Hist >= 0 ? 'rgba(38,166,154,0.6)' : 'rgba(239,83,80,0.6)',
+      color: row.MACD_Hist >= 0 ? colors().upSoft : colors().downSoft,
     }));
 }
 
@@ -247,14 +189,28 @@ const PANEL_SECTIONS = [
 ];
 
 const DRAWING_TOOLS = [
-  { id: 'horizontal', clicksNeeded: 1 },
-  { id: 'trendline', clicksNeeded: 2 },
-  { id: 'rectangle', clicksNeeded: 2 },
-  { id: 'pattern', clicksNeeded: 2 },
+  { id: 'horizontal', clicksNeeded: 1, key: 'H' },
+  { id: 'trendline', clicksNeeded: 2, key: 'T' },
+  { id: 'rectangle', clicksNeeded: 2, key: 'R' },
+  { id: 'pattern', clicksNeeded: 2, key: 'P' },
 ];
 
 const TWO_POINT_TOOLS = ['trendline', 'rectangle', 'pattern'];
-const PATTERN_HIGHLIGHT = { fillColor: 'rgba(245, 158, 11, 0.12)', borderColor: '#f59e0b' };
+const TOOL_ICONS = {
+  horizontal: HorizontalLineIcon,
+  trendline: TrendLineIcon,
+  rectangle: RectangleIcon,
+  pattern: PatternIcon,
+};
+const SIDEBAR_TABS = [
+  { id: 'indicators', labelKey: 'tabIndicators' },
+  { id: 'scan', labelKey: 'tabScan' },
+  { id: 'patterns', labelKey: 'tabPatterns' },
+  { id: 'moves', labelKey: 'tabMoves' },
+];
+function patternHighlight() {
+  return { fillColor: colors().accentSoft, borderColor: colors().accent };
+}
 
 async function fetchRange(symbol, start, end) {
   const toISO = (d) => d.toISOString().slice(0, 10);
@@ -302,8 +258,41 @@ async function fetchEarnings(symbol) {
 }
 
 function reactionColor(pct) {
-  if (pct == null) return '#9ca3af';
-  return pct >= 0 ? '#26a69a' : '#ef5350';
+  if (pct == null) return colors().textDim;
+  return pct >= 0 ? colors().up : colors().down;
+}
+
+function chartThemeOptions(p) {
+  return {
+    layout: {
+      background: { color: p.chartBg },
+      textColor: p.chartText,
+      fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+      fontSize: 11,
+      panes: { separatorColor: p.separator, separatorHoverColor: p.separatorHover, enableResize: true },
+    },
+    grid: { vertLines: { color: p.gridColor }, horzLines: { color: p.gridColor } },
+    crosshair: {
+      vertLine: { color: p.crosshair, labelBackgroundColor: p.btnBorder },
+      horzLine: { color: p.crosshair, labelBackgroundColor: p.btnBorder },
+    },
+    rightPriceScale: { borderColor: p.separator },
+    timeScale: { borderColor: p.separator },
+  };
+}
+
+function applyChartTheme(chart, seriesMap) {
+  const p = colors();
+  chart.applyOptions(chartThemeOptions(p));
+  seriesMap.candle?.applyOptions({
+    upColor: p.up,
+    downColor: p.down,
+    wickUpColor: p.up,
+    wickDownColor: p.down,
+    borderVisible: false,
+  });
+  seriesMap.supertrendUp?.applyOptions({ color: p.up });
+  seriesMap.supertrendDown?.applyOptions({ color: p.down });
 }
 
 async function fetchMoves(symbol) {
@@ -337,7 +326,7 @@ function applyMarkers(markersPlugin, earningsData, earningsVisible, movesData, m
         time: move.date,
         position: up ? 'belowBar' : 'aboveBar',
         shape: up ? 'arrowUp' : 'arrowDown',
-        color: up ? '#26a69a' : '#ef5350',
+        color: up ? colors().up : colors().down,
         text: count > 0 ? String(count) : '',
       });
     });
@@ -386,6 +375,71 @@ function formatChange(pct) {
   return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
 }
 
+function buildQuote(rows) {
+  const last = rows[rows.length - 1];
+  const prev = rows[rows.length - 2];
+  if (!last) return null;
+  const change = prev ? last.Close - prev.Close : null;
+  return {
+    close: last.Close,
+    open: last.Open,
+    high: last.High,
+    low: last.Low,
+    volume: last.Volume,
+    change,
+    changePct: prev && prev.Close ? (change / prev.Close) * 100 : null,
+  };
+}
+
+function signed(value, digits = 2) {
+  if (value == null) return '-';
+  return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
+}
+
+function formatVolume(value) {
+  if (value == null) return '-';
+  if (value >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(0)}K`;
+  return String(Math.round(value));
+}
+
+function formatClock(date) {
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// BIST continuous session in Istanbul time (public holidays are not handled).
+// İstanbul saatine göre BIST sürekli işlem seansı (resmi tatiller hesaba katılmıyor).
+function bistSession(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Istanbul',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  const minutes = Number(get('hour')) * 60 + Number(get('minute'));
+  const weekday = !['Sat', 'Sun'].includes(get('weekday'));
+  return { open: weekday && minutes >= 600 && minutes < 1080, time: `${get('hour')}:${get('minute')}` };
+}
+
+function RailButton({ label, shortcut, active, disabled, onClick, children }) {
+  return (
+    <button
+      className={`stc-rail-btn ${active ? 'is-active' : ''}`}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      aria-keyshortcuts={shortcut}
+      aria-pressed={active}
+      title={shortcut ? `${label} (${shortcut})` : label}
+    >
+      {children}
+    </button>
+  );
+}
+
 function formatDateTR(iso) {
   const [y, m, d] = iso.slice(0, 10).split('-');
   return `${d}.${m}.${y}${iso.length > 10 ? ' ' + iso.slice(11) : ''}`;
@@ -406,8 +460,8 @@ function applySrZones(series, primitivesRef, srData, visible) {
     new SRZonePrimitive(zone, { lineColor: color, fillColor, label: `${zone.touches}x` });
 
   const primitives = [
-    ...(srData.resistance || []).map((z) => build(z, '#ef5350', 'rgba(239,83,80,0.10)')),
-    ...(srData.support || []).map((z) => build(z, '#26a69a', 'rgba(38,166,154,0.10)')),
+    ...(srData.resistance || []).map((z) => build(z, colors().down, colors().downZone)),
+    ...(srData.support || []).map((z) => build(z, colors().up, colors().upZone)),
   ];
 
   primitives.forEach((p) => series.attachPrimitive(p));
@@ -466,9 +520,12 @@ function App() {
   const seriesMapRef = useRef({});
   const loadedDataRef = useRef([]);
   const [error, setError] = useState(null);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState('indicators');
+  const [quote, setQuote] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [session, setSession] = useState(() => bistSession());
+  const [darkMode, setDarkMode] = useState(true);
   const [lang, setLang] = useState('en');
   const langRef = useRef(lang);
   const str = STRINGS[lang];
@@ -491,6 +548,7 @@ function App() {
 
   const [symbol, setSymbol] = useState('THYAO');
   const [symbolInput, setSymbolInput] = useState('THYAO');
+  const symbolInputRef = useRef(null);
 
   const [activeTool, setActiveTool] = useState(null);
   const activeToolRef = useRef(null);
@@ -511,6 +569,16 @@ function App() {
   useEffect(() => {
     activeToolRef.current = activeTool;
   }, [activeTool]);
+
+  useEffect(() => {
+    const id = setInterval(() => setSession(bistSession()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  function openSidebarTab(tab) {
+    setSidebarTab(tab);
+    setSidebarOpen(true);
+  }
 
   function handleSymbolSubmit(e) {
     e.preventDefault();
@@ -678,7 +746,10 @@ function App() {
       if (!selectedDrawingRef.current && movesVisibleRef.current && param.time) {
         const date = timeToISO(param.time);
         const move = movesRef.current?.moves.find((m) => m.date === date);
-        if (move) setMoveDetail(move);
+        if (move) {
+          setMoveDetail(move);
+          openSidebarTab('moves');
+        }
       }
       return;
     }
@@ -738,13 +809,14 @@ function App() {
     if (series && rows.length > 0) {
       const high = Math.max(...rows.map((row) => row.High));
       const low = Math.min(...rows.map((row) => row.Low));
-      const highlight = new RectanglePrimitive({ time: start, price: high }, { time: end, price: low }, PATTERN_HIGHLIGHT);
+      const highlight = new RectanglePrimitive({ time: start, price: high }, { time: end, price: low }, patternHighlight());
       series.attachPrimitive(highlight);
       patternHighlightRef.current = highlight;
     }
 
     const requestId = ++patternRequestRef.current;
     setPatternSearch({ loading: true, error: null, data: null });
+    openSidebarTab('patterns');
     try {
       const data = await fetchPatterns(symbol, start, end);
       if (requestId === patternRequestRef.current) setPatternSearch({ loading: false, error: null, data });
@@ -776,7 +848,7 @@ function App() {
 
     if (!previewPrimitiveRef.current) {
       const PrimitiveClass = tool === 'trendline' ? TrendLinePrimitive : RectanglePrimitive;
-      const extra = tool === 'pattern' ? PATTERN_HIGHLIGHT : {};
+      const extra = tool === 'pattern' ? patternHighlight() : {};
       const preview = new PrimitiveClass(p1, p2, { preview: true, ...extra });
       series.attachPrimitive(preview);
       previewPrimitiveRef.current = preview;
@@ -786,13 +858,46 @@ function App() {
   }
 
   useEffect(() => {
+    const toolByKey = Object.fromEntries(DRAWING_TOOLS.map((tool) => [tool.key.toLowerCase(), tool.id]));
+
+    function isTyping() {
+      const el = document.activeElement;
+      if (!el) return false;
+      if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+      return el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit'].includes(el.type);
+    }
+
     function handleKeyDown(e) {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      const activeTag = document.activeElement?.tagName;
-      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
-      if (!selectedDrawingRef.current) return;
-      e.preventDefault();
-      handleDeleteSelected();
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === 'Escape') {
+        if (isTyping()) {
+          document.activeElement.blur();
+        } else if (activeToolRef.current) {
+          handleSelectTool(null);
+        } else {
+          clearSelection();
+        }
+        return;
+      }
+      if (isTyping()) return;
+
+      if (e.key === '/') {
+        e.preventDefault();
+        symbolInputRef.current?.focus();
+        symbolInputRef.current?.select();
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawingRef.current) {
+        e.preventDefault();
+        handleDeleteSelected();
+        return;
+      }
+      const tool = toolByKey[e.key.toLowerCase()];
+      if (tool) {
+        e.preventDefault();
+        handleSelectTool(tool);
+      }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -867,27 +972,12 @@ function App() {
         earningsRef.current = earningsData;
         setEarningsNext(earningsData?.next ?? null);
 
-        const currentTheme = darkMode ? THEME.dark : THEME.light;
-
+        const themeOptions = chartThemeOptions(colors());
         chart = createChart(chartContainerRef.current, {
           width: chartContainerRef.current.clientWidth,
           height: chartContainerRef.current.clientHeight,
-          layout: {
-            background: { color: currentTheme.chartBg },
-            textColor: currentTheme.chartText,
-            panes: {
-              separatorColor: currentTheme.separator,
-              separatorHoverColor: currentTheme.separatorHover,
-              enableResize: true,
-            },
-          },
-          grid: {
-            vertLines: { color: currentTheme.gridColor },
-            horzLines: { color: currentTheme.gridColor },
-          },
-          crosshair: {
-            mode: CrosshairMode.Normal,
-          },
+          ...themeOptions,
+          crosshair: { ...themeOptions.crosshair, mode: CrosshairMode.Normal },
           localization: { locale: STRINGS[langRef.current].locale },
         });
         chartRef.current = chart;
@@ -898,12 +988,15 @@ function App() {
           seriesMapRef.current[key] = chart.addSeries(type, { ...options, visible }, 0);
         });
         chart.panes()[0].setStretchFactor(MAIN_PANE_STRETCH);
+        applyChartTheme(chart, seriesMapRef.current);
 
         rebuildDedicatedPanes(chart, seriesMapRef.current, visibility);
         applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
 
         loadedData = data;
         loadedDataRef.current = loadedData;
+        setQuote(buildQuote(data));
+        setUpdatedAt(new Date());
         renderAllSeries(seriesMapRef.current, loadedData);
         applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
         earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
@@ -998,6 +1091,7 @@ function App() {
       setEarningsTip(null);
       setBarChangeTip(null);
       setEarningsNext(null);
+      setQuote(null);
       movesRef.current = null;
       setMoveDetail(null);
       patternHighlightRef.current = null;
@@ -1014,23 +1108,14 @@ function App() {
   }, [symbol]);
 
   useEffect(() => {
+    setPalette(t);
     const chart = chartRef.current;
     if (!chart) return;
-    chart.applyOptions({
-      layout: {
-        background: { color: t.chartBg },
-        textColor: t.chartText,
-        panes: {
-          separatorColor: t.separator,
-          separatorHoverColor: t.separatorHover,
-          enableResize: true,
-        },
-      },
-      grid: {
-        vertLines: { color: t.gridColor },
-        horzLines: { color: t.gridColor },
-      },
-    });
+    applyChartTheme(chart, seriesMapRef.current);
+    renderAllSeries(seriesMapRef.current, loadedDataRef.current);
+    refreshMarkers();
+    applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [darkMode]);
 
   useEffect(() => {
@@ -1050,16 +1135,24 @@ function App() {
   return (
     <LangContext.Provider value={str}>
       <div
+        className="stc-root"
         style={{
           position: 'relative',
           height: '100vh',
           width: '100%',
           overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
           backgroundColor: t.pageBg,
+          '--page-bg': t.pageBg,
           '--panel-bg': t.panelBg,
           '--panel-border': t.panelBorder,
           '--text': t.text,
+          '--text-strong': t.textStrong,
           '--text-dim': t.textDim,
+          '--up': t.up,
+          '--down': t.down,
+          '--accent-text': t.accentText,
           '--btn-bg': t.btnBg,
           '--btn-bg-hover': t.btnBgHover,
           '--btn-border': t.btnBorder,
@@ -1070,131 +1163,138 @@ function App() {
         }}
       >
         <style>{`
+          .stc-root {
+            font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+            font-variant-numeric: tabular-nums;
+            color: var(--text);
+          }
           .stc-header {
             background: var(--panel-bg);
-            backdrop-filter: blur(14px) saturate(180%);
-            -webkit-backdrop-filter: blur(14px) saturate(180%);
             border: 1px solid var(--panel-border);
-            border-radius: 14px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
-            padding: 10px 12px;
+            border-radius: 4px;
+            padding: 8px 10px;
             display: flex;
             align-items: center;
-            gap: 10px;
-            transition: background-color 200ms ease, border-color 200ms ease;
+            gap: 8px;
           }
           .stc-title {
-            font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
-            font-weight: 700;
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-weight: 600;
             font-size: 15px;
             letter-spacing: 0.02em;
-            color: var(--text);
+            color: var(--text-strong);
             margin: 0;
-            padding: 0 4px;
-            transition: color 200ms ease;
+            padding: 0 2px;
           }
           .stc-input {
-            font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
             font-size: 13px;
+            font-weight: 500;
+            text-transform: uppercase;
             border: 1px solid var(--btn-border);
             background: var(--input-bg);
-            color: var(--text);
-            border-radius: 8px;
-            padding: 7px 10px;
+            color: var(--text-strong);
+            border-radius: 3px;
+            padding: 6px 9px;
             width: 100px;
             outline: none;
-            transition: border-color 150ms ease, box-shadow 150ms ease, background-color 200ms ease, color 200ms ease;
+            transition: border-color 120ms ease, box-shadow 120ms ease;
+          }
+          .stc-input::placeholder {
+            color: var(--text-dim);
+            text-transform: none;
           }
           .stc-input:focus {
             border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-ring);
+            box-shadow: 0 0 0 2px var(--accent-ring);
           }
           .stc-btn {
-            font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 13px;
+            font-family: inherit;
+            font-size: 12.5px;
             font-weight: 500;
             border: 1px solid var(--btn-border);
             background: var(--btn-bg);
             color: var(--text);
-            border-radius: 8px;
-            padding: 7px 14px;
+            border-radius: 3px;
+            padding: 6px 11px;
             cursor: pointer;
-            transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease, color 200ms ease;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
           }
           .stc-btn:hover {
             background: var(--btn-bg-hover);
-            transform: translateY(-1px);
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
-          }
-          .stc-btn:active {
-            transform: translateY(0);
+            color: var(--text-strong);
           }
           .stc-btn:disabled {
             opacity: 0.4;
             cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
           }
-          .stc-btn-primary {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: white;
+          .stc-btn:disabled:hover {
+            background: var(--btn-bg);
+            color: var(--text);
           }
-          .stc-btn-primary:hover {
-            background: var(--accent-hover);
-            box-shadow: 0 4px 10px var(--accent-ring);
-          }
+          .stc-btn-primary,
           .stc-btn-active {
             background: var(--accent);
             border-color: var(--accent);
-            color: white;
+            color: var(--accent-text);
+          }
+          .stc-btn-primary:hover,
+          .stc-btn-active:hover {
+            background: var(--accent-hover);
+            border-color: var(--accent-hover);
+            color: var(--accent-text);
+          }
+          .stc-btn:focus-visible,
+          .stc-theme-toggle:focus-visible,
+          .stc-toggle-all:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
           }
           .stc-theme-toggle {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            border-radius: 3px;
             border: 1px solid var(--btn-border);
             background: var(--btn-bg);
-            color: var(--text);
+            color: var(--text-dim);
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             padding: 0;
-            transition: background-color 150ms ease, transform 200ms ease, box-shadow 150ms ease, color 200ms ease;
+            transition: background-color 120ms ease, color 120ms ease;
           }
           .stc-theme-toggle:hover {
             background: var(--btn-bg-hover);
-            transform: translateY(-1px) rotate(20deg);
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+            color: var(--text-strong);
           }
           .stc-toggle-all {
-            font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 15px;
-            font-weight: 600;
+            font-family: inherit;
+            font-size: 12.5px;
+            font-weight: 500;
             border: 1px solid var(--btn-border);
             background: var(--btn-bg);
             color: var(--text);
-            border-radius: 10px;
-            padding: 9px 16px;
+            border-radius: 3px;
+            padding: 7px 12px;
             cursor: pointer;
-            transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
             width: 100%;
+            transition: background-color 120ms ease, color 120ms ease;
           }
           .stc-toggle-all:hover {
             background: var(--btn-bg-hover);
-            transform: translateY(-1px);
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+            color: var(--text-strong);
           }
           .stc-section-title {
-            font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.06em;
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
             color: var(--text-dim);
-            opacity: 0.7;
-            margin: 12px 4px 4px;
+            margin: 14px 2px 6px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--panel-border);
           }
           .stc-checkbox-grid {
             display: grid;
@@ -1204,226 +1304,547 @@ function App() {
           .stc-checkbox-row {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 16px;
-            color: var(--text-dim);
+            gap: 9px;
+            font-size: 14px;
+            color: var(--text);
             white-space: nowrap;
-            padding: 7px 10px;
-            border-radius: 8px;
+            padding: 6px 8px;
+            border-radius: 3px;
             cursor: pointer;
-            transition: background-color 120ms ease, color 200ms ease;
+            transition: background-color 120ms ease;
           }
           .stc-checkbox-row:hover {
             background: var(--btn-bg-hover);
           }
           .stc-checkbox-row input[type="checkbox"] {
-            width: 17px;
-            height: 17px;
+            width: 14px;
+            height: 14px;
+            margin: 0;
             flex-shrink: 0;
             cursor: pointer;
             accent-color: var(--accent);
           }
+          .stc-kbd {
+            position: absolute;
+            right: 7px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-size: 10.5px;
+            line-height: 15px;
+            color: var(--text-dim);
+            border: 1px solid var(--btn-border);
+            border-radius: 2px;
+            padding: 0 4px;
+            pointer-events: none;
+          }
+          .stc-mono {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+          }
+          .stc-muted {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.55;
+            color: var(--text-dim);
+          }
+          .stc-panel-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-strong);
+          }
+          .stc-topbar {
+            height: 48px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 0 12px 0 16px;
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--panel-border);
+          }
+          .stc-brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.14em;
+            color: var(--text-dim);
+            white-space: nowrap;
+          }
+          .stc-vrule {
+            width: 1px;
+            height: 24px;
+            background: var(--panel-border);
+          }
+          .stc-quote {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            white-space: nowrap;
+          }
+          .stc-quote-price {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-strong);
+          }
+          .stc-ohlc {
+            display: flex;
+            gap: 14px;
+            font-size: 11px;
+            color: var(--text-dim);
+            white-space: nowrap;
+          }
+          .stc-ohlc b {
+            font-weight: 500;
+            color: var(--text);
+          }
+          .stc-session {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-dim);
+            white-space: nowrap;
+          }
+          .stc-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+          }
+          .stc-seg {
+            display: flex;
+            border: 1px solid var(--btn-border);
+            border-radius: 3px;
+            overflow: hidden;
+          }
+          .stc-seg button {
+            height: 28px;
+            padding: 0 10px;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+          }
+          .stc-seg button.is-active {
+            background: var(--btn-bg-hover);
+            color: var(--text-strong);
+          }
+          .stc-icon-btn {
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            padding: 0;
+            border: 1px solid transparent;
+            border-radius: 3px;
+            background: transparent;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: background-color 120ms ease, color 120ms ease;
+          }
+          .stc-icon-btn.stc-bordered {
+            border-color: var(--btn-border);
+          }
+          .stc-icon-btn:hover {
+            background: var(--btn-bg-hover);
+            color: var(--text-strong);
+          }
+          .stc-icon-btn.is-active {
+            color: var(--accent);
+          }
+          .stc-rail {
+            width: 48px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 10px 0;
+            background: var(--panel-bg);
+            border-right: 1px solid var(--panel-border);
+          }
+          .stc-rail-btn {
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: none;
+            border-radius: 3px;
+            background: transparent;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: background-color 120ms ease, color 120ms ease;
+          }
+          .stc-rail-btn:hover {
+            background: var(--btn-bg-hover);
+            color: var(--text-strong);
+          }
+          .stc-rail-btn.is-active {
+            background: var(--btn-bg-hover);
+            color: var(--accent);
+          }
+          .stc-rail-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            background: transparent;
+            color: var(--text-dim);
+          }
+          .stc-rail-divider {
+            width: 20px;
+            height: 1px;
+            margin: 6px 0;
+            background: var(--panel-border);
+          }
+          .stc-sidebar {
+            width: 360px;
+            flex-shrink: 0;
+            flex-direction: column;
+            min-height: 0;
+            background: var(--panel-bg);
+            border-left: 1px solid var(--panel-border);
+          }
+          .stc-tabs {
+            display: flex;
+            height: 40px;
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--panel-border);
+          }
+          .stc-tab {
+            flex: 1;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-family: inherit;
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: color 120ms ease;
+          }
+          .stc-tab:hover {
+            color: var(--text-strong);
+          }
+          .stc-tab.is-active {
+            color: var(--text-strong);
+            font-weight: 600;
+            box-shadow: inset 0 -2px 0 var(--accent);
+          }
+          .stc-tabpanel {
+            flex-grow: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 14px 16px;
+            overflow-y: auto;
+          }
+          .stc-tabpanel[hidden] {
+            display: none;
+          }
+          .stc-statusbar {
+            height: 26px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 0 16px;
+            background: var(--panel-bg);
+            border-top: 1px solid var(--panel-border);
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-size: 11px;
+            color: var(--text-dim);
+            white-space: nowrap;
+          }
+          .stc-row {
+            cursor: pointer;
+          }
+          .stc-row:hover {
+            background: var(--btn-bg-hover);
+          }
+          .stc-error {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 20;
+            margin: 0;
+            padding: 8px 12px;
+            font-size: 12.5px;
+            color: var(--down);
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 3px;
+          }
+          .stc-seg button:focus-visible,
+          .stc-icon-btn:focus-visible,
+          .stc-rail-btn:focus-visible,
+          .stc-tab:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: -2px;
+          }
           @media (prefers-reduced-motion: reduce) {
-            .stc-btn, .stc-input, .stc-toggle-all, .stc-theme-toggle { transition: none; }
-            .stc-btn:hover, .stc-toggle-all:hover, .stc-theme-toggle:hover { transform: none; }
+            .stc-btn, .stc-input, .stc-toggle-all, .stc-theme-toggle, .stc-checkbox-row { transition: none; }
           }
         `}</style>
 
-        <div className="stc-header" style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 20 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
-            <h2 className="stc-title">{symbol}</h2>
-            {visibility.earnings && earningsNext && (
-              <span style={{ fontSize: '11px', color: 'var(--text-dim)', padding: '0 4px' }}>
-                {str.nextEarnings(formatDateTR(earningsNext))}
-              </span>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <button
-                className="stc-theme-toggle"
-                onClick={() => setDarkMode((d) => !d)}
-                aria-label={darkMode ? str.lightMode : str.darkMode}
-                title={darkMode ? str.lightMode : str.darkMode}
-              >
-                {darkMode ? <MoonIcon /> : <SunIcon />}
-              </button>
-              <button
-                className="stc-btn"
-                onClick={() => setLang((l) => (l === 'en' ? 'tr' : 'en'))}
-                title={str.switchLangTitle}
-                style={{ padding: '5px 9px', fontSize: '12px', fontWeight: 700 }}
-              >
-                {str.switchLang}
-              </button>
-            </div>
+        <header className="stc-topbar">
+          <div className="stc-brand">
+            <LogoMark />
+            SMARTER CHARTS
           </div>
+          <div className="stc-vrule" />
 
-          <form onSubmit={handleSymbolSubmit} style={{ display: 'inline-flex', gap: '6px' }}>
-            <input
-              className="stc-input"
-              value={symbolInput}
-              onChange={(e) => setSymbolInput(e.target.value)}
-              placeholder={str.symbolPlaceholder}
-            />
+          <form onSubmit={handleSymbolSubmit} style={{ display: 'flex', gap: '6px' }}>
+            <div style={{ position: 'relative' }}>
+              <input
+                ref={symbolInputRef}
+                className="stc-input"
+                value={symbolInput}
+                onChange={(e) => setSymbolInput(e.target.value)}
+                placeholder={str.symbolPlaceholder}
+                aria-label={str.symbolPlaceholder}
+                aria-keyshortcuts="/"
+                style={{ width: '118px', paddingRight: '26px' }}
+              />
+              <kbd className="stc-kbd">/</kbd>
+            </div>
             <button type="submit" className="stc-btn stc-btn-primary">{str.load}</button>
           </form>
 
-          <button className="stc-btn" onClick={() => setPanelOpen((open) => !open)}>{str.indicators}</button>
-        </div>
-
-        <div className="stc-header" style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 20 }}>
-          <button
-            className={`stc-btn ${!toolsOpen && (activeTool || selectedDrawing) ? 'stc-btn-active' : ''}`}
-            onClick={() => setToolsOpen((open) => !open)}
-            aria-expanded={toolsOpen}
-            title={toolsOpen ? str.hideTools : str.toolsTitle}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <PencilIcon />
-            {toolsOpen ? '›' : str.tools}
-          </button>
-
-          {toolsOpen && DRAWING_TOOLS.map((tool) => (
-            <button
-              key={tool.id}
-              className={`stc-btn ${activeTool === tool.id ? 'stc-btn-active' : ''}`}
-              onClick={() => handleSelectTool(tool.id)}
-            >
-              {str.drawingTools[tool.id]}
-            </button>
-          ))}
-
-          {toolsOpen && (
-            <>
-              <button
-                className={`stc-btn ${selectedExtend.left ? 'stc-btn-active' : ''}`}
-                onClick={() => handleToggleExtend('left')}
-                disabled={!canExtend}
+          {quote && (
+            <div className="stc-quote">
+              <span className="stc-quote-price">{quote.close.toFixed(2)}</span>
+              <span
+                className="stc-mono"
+                style={{ fontSize: '13px', fontWeight: 500, color: (quote.change ?? 0) >= 0 ? 'var(--up)' : 'var(--down)' }}
               >
-                {str.extendLeft}
-              </button>
-              <button
-                className={`stc-btn ${selectedExtend.right ? 'stc-btn-active' : ''}`}
-                onClick={() => handleToggleExtend('right')}
-                disabled={!canExtend}
-              >
-                {str.extendRight}
-              </button>
-
-              <button className="stc-btn" onClick={handleDeleteSelected} disabled={!selectedDrawing}>
-                {str.deleteSelected}
-              </button>
-              <button className="stc-btn" onClick={handleClearDrawings}>{str.clear}</button>
-            </>
+                {signed(quote.change)}&nbsp;&nbsp;{signed(quote.changePct)}%
+              </span>
+            </div>
           )}
+          {quote && (
+            <div className="stc-ohlc stc-mono">
+              <span>O <b>{quote.open.toFixed(2)}</b></span>
+              <span>H <b>{quote.high.toFixed(2)}</b></span>
+              <span>L <b>{quote.low.toFixed(2)}</b></span>
+              <span>V <b>{formatVolume(quote.volume)}</b></span>
+            </div>
+          )}
+
+          <div style={{ flexGrow: 1 }} />
+
+          {visibility.earnings && earningsNext && (
+            <span style={{ fontSize: '12px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+              {str.nextEarnings(formatDateTR(earningsNext))}
+            </span>
+          )}
+          <span className="stc-session">
+            <span className="stc-dot" style={{ background: session.open ? 'var(--up)' : 'var(--text-dim)' }} />
+            {session.open ? str.sessionOpen(session.time) : str.sessionClosed(session.time)}
+          </span>
+          <div className="stc-seg" role="group" aria-label="Language">
+            <button className={lang === 'en' ? 'is-active' : ''} aria-pressed={lang === 'en'} onClick={() => setLang('en')}>
+              EN
+            </button>
+            <button className={lang === 'tr' ? 'is-active' : ''} aria-pressed={lang === 'tr'} onClick={() => setLang('tr')}>
+              TR
+            </button>
+          </div>
+          <button
+            className="stc-icon-btn stc-bordered"
+            onClick={() => setDarkMode((d) => !d)}
+            aria-label={darkMode ? str.lightMode : str.darkMode}
+            title={darkMode ? str.lightMode : str.darkMode}
+          >
+            {darkMode ? <SunIcon size={15} /> : <MoonIcon size={15} />}
+          </button>
+          <button
+            className={`stc-icon-btn stc-bordered ${sidebarOpen ? 'is-active' : ''}`}
+            onClick={() => setSidebarOpen((open) => !open)}
+            aria-label={str.togglePanel}
+            aria-pressed={sidebarOpen}
+            title={str.togglePanel}
+          >
+            <PanelIcon size={15} />
+          </button>
+        </header>
+
+        <div style={{ flexGrow: 1, display: 'flex', minHeight: 0 }}>
+          <nav className="stc-rail" aria-label={str.toolsTitle}>
+            <RailButton label={str.cursor} shortcut="Esc" active={!activeTool} onClick={() => handleSelectTool(null)}>
+              <CursorIcon />
+            </RailButton>
+            {DRAWING_TOOLS.map((tool) => {
+              const ToolIcon = TOOL_ICONS[tool.id];
+              return (
+                <RailButton
+                  key={tool.id}
+                  label={str.drawingTools[tool.id]}
+                  shortcut={tool.key}
+                  active={activeTool === tool.id}
+                  onClick={() => handleSelectTool(tool.id)}
+                >
+                  <ToolIcon />
+                </RailButton>
+              );
+            })}
+            <div className="stc-rail-divider" />
+            <RailButton
+              label={str.extendLeft}
+              active={selectedExtend.left}
+              disabled={!canExtend}
+              onClick={() => handleToggleExtend('left')}
+            >
+              <ExtendLeftIcon />
+            </RailButton>
+            <RailButton
+              label={str.extendRight}
+              active={selectedExtend.right}
+              disabled={!canExtend}
+              onClick={() => handleToggleExtend('right')}
+            >
+              <ExtendRightIcon />
+            </RailButton>
+            <RailButton label={str.deleteSelected} shortcut="Del" disabled={!selectedDrawing} onClick={handleDeleteSelected}>
+              <DeleteIcon />
+            </RailButton>
+            <RailButton label={str.clear} onClick={handleClearDrawings}>
+              <ClearAllIcon />
+            </RailButton>
+          </nav>
+
+          <main style={{ flexGrow: 1, position: 'relative', minWidth: 0 }}>
+            <div
+              ref={chartContainerRef}
+              style={{ position: 'absolute', inset: 0, cursor: activeTool ? 'crosshair' : 'default' }}
+            />
+
+            {error && (
+              <p className="stc-error">
+                {str.loadFailed}: {error}
+              </p>
+            )}
+
+            {barChangeTip && (
+              <div
+                className="stc-mono"
+                style={{
+                  position: 'absolute',
+                  left: barChangeTip.x,
+                  top: barChangeTip.y - 8,
+                  transform: 'translate(-50%, -100%)',
+                  zIndex: 25,
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: 'var(--page-bg)',
+                  background: reactionColor(barChangeTip.pct),
+                  pointerEvents: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {formatChange(barChangeTip.pct)}
+              </div>
+            )}
+
+            {earningsTip && (
+              <div
+                className="stc-header"
+                style={{
+                  position: 'absolute',
+                  left: Math.max(8, Math.min(earningsTip.x + 14, (chartContainerRef.current?.clientWidth ?? 0) - 250)),
+                  top: Math.max(8, earningsTip.y - 130),
+                  zIndex: 30,
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: '3px',
+                  padding: '10px 12px',
+                  width: '230px',
+                  fontSize: '12px',
+                  color: 'var(--text)',
+                  pointerEvents: 'none',
+                }}
+              >
+                <strong style={{ fontSize: '13px', color: 'var(--text-strong)' }}>
+                  {str.earningsTitle(earningsTip.event.period)}
+                </strong>
+                <span style={{ color: 'var(--text-dim)' }}>{str.announced(formatDateTR(earningsTip.event.publishedAt))}</span>
+                <span>{str.netIncome(formatTL(earningsTip.event.netIncome, str))}</span>
+                <span>{str.yoyChange(formatPct(earningsTip.event.netIncomeYoY))}</span>
+                <span style={{ color: reactionColor(earningsTip.event.reactionPct) }}>
+                  {str.priceReaction(earningsTip.event.reactionDays, formatPct(earningsTip.event.reactionPct))}
+                </span>
+              </div>
+            )}
+          </main>
+
+          <aside className="stc-sidebar" style={{ display: sidebarOpen ? 'flex' : 'none' }}>
+            <div className="stc-tabs" role="tablist">
+              {SIDEBAR_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={sidebarTab === tab.id}
+                  className={`stc-tab ${sidebarTab === tab.id ? 'is-active' : ''}`}
+                  onClick={() => setSidebarTab(tab.id)}
+                >
+                  {str[tab.labelKey]}
+                </button>
+              ))}
+            </div>
+
+            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'indicators'}>
+              <button className="stc-toggle-all" onClick={handleToggleAll}>
+                {allVisible ? str.hideAll : str.showAll}
+              </button>
+              {PANEL_SECTIONS.map((section) => (
+                <div key={section.titleKey}>
+                  <div className="stc-section-title">{str[section.titleKey]}</div>
+                  <div className="stc-checkbox-grid">
+                    {section.groups.map((group) => (
+                      <label key={group.id} className="stc-checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={visibility[group.id]}
+                          onChange={() => handleToggle(group.id)}
+                        />
+                        {str.groups[group.id]}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'scan'}>
+              <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
+            </div>
+
+            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'patterns'}>
+              <PatternSearchWidget state={patternSearch} onClose={handleClosePatternSearch} />
+            </div>
+
+            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'moves'}>
+              <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />
+            </div>
+          </aside>
         </div>
 
-        {panelOpen && (
-          <div
-            className="stc-header"
-            style={{
-              position: 'absolute',
-              top: '68px',
-              left: '16px',
-              zIndex: 20,
-              flexDirection: 'column',
-              alignItems: 'stretch',
-              gap: '2px',
-              padding: '14px',
-              maxHeight: 'calc(100vh - 100px)',
-              overflowY: 'auto',
-            }}
-          >
-            <button className="stc-toggle-all" onClick={handleToggleAll}>
-              {allVisible ? str.hideAll : str.showAll}
-            </button>
-
-            {PANEL_SECTIONS.map((section) => (
-              <div key={section.titleKey}>
-                <div className="stc-section-title">{str[section.titleKey]}</div>
-                <div className="stc-checkbox-grid">
-                  {section.groups.map((group) => (
-                    <label key={group.id} className="stc-checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={visibility[group.id]}
-                        onChange={() => handleToggle(group.id)}
-                      />
-                      {str.groups[group.id]}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {error && (
-          <p style={{ position: 'absolute', top: '68px', left: '16px', zIndex: 20, color: '#ef5350' }}>
-            {str.loadFailed}: {error}
-          </p>
-        )}
-
-        <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
-
-        {patternSearch && <PatternSearchWidget state={patternSearch} onClose={handleClosePatternSearch} />}
-
-        {moveDetail && <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />}
-
-        {barChangeTip && (
-          <div
-            style={{
-              position: 'absolute',
-              left: barChangeTip.x,
-              top: barChangeTip.y - 8,
-              transform: 'translate(-50%, -100%)',
-              zIndex: 25,
-              padding: '2px 6px',
-              borderRadius: '4px',
-              fontSize: '12px',
-              fontWeight: 600,
-              color: '#ffffff',
-              background: reactionColor(barChangeTip.pct),
-              pointerEvents: 'none',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {formatChange(barChangeTip.pct)}
-          </div>
-        )}
-
-        {earningsTip && (
-          <div
-            className="stc-header"
-            style={{
-              position: 'absolute',
-              left: Math.max(8, Math.min(earningsTip.x + 14, window.innerWidth - 250)),
-              top: Math.max(8, earningsTip.y - 130),
-              zIndex: 30,
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              gap: '3px',
-              padding: '10px 12px',
-              width: '230px',
-              fontSize: '12px',
-              color: 'var(--text)',
-              pointerEvents: 'none',
-            }}
-          >
-            <strong style={{ fontSize: '13px' }}>{str.earningsTitle(earningsTip.event.period)}</strong>
-            <span style={{ opacity: 0.7 }}>{str.announced(formatDateTR(earningsTip.event.publishedAt))}</span>
-            <span>{str.netIncome(formatTL(earningsTip.event.netIncome, str))}</span>
-            <span>{str.yoyChange(formatPct(earningsTip.event.netIncomeYoY))}</span>
-            <span style={{ color: reactionColor(earningsTip.event.reactionPct) }}>
-              {str.priceReaction(earningsTip.event.reactionDays, formatPct(earningsTip.event.reactionPct))}
-            </span>
-          </div>
-        )}
-
-        <div
-          ref={chartContainerRef}
-          style={{ width: '100%', height: '100%', cursor: activeTool ? 'crosshair' : 'default' }}
-        />
+        <footer className="stc-statusbar">
+          <span>{symbol} · 1D · BIST</span>
+          {updatedAt && <span>{str.updated(formatClock(updatedAt))}</span>}
+          <div style={{ flexGrow: 1 }} />
+          <span>{str.shortcutsHint}</span>
+          <span>{str.dataSources}</span>
+        </footer>
       </div>
     </LangContext.Provider>
   );

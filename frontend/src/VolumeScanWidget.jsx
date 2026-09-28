@@ -6,11 +6,13 @@ function formatRvol(value) {
   return value == null ? '-' : value.toFixed(2);
 }
 
+const cell = { padding: '6px 8px', textAlign: 'right' };
+const firstCell = { ...cell, textAlign: 'left' };
+
 function VolumeScanWidget({ onSelectSymbol }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
   const [onlyBreakouts, setOnlyBreakouts] = useState(false);
   const t = useT();
 
@@ -20,7 +22,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
     try {
       const url = `${API_BASE}/api/scan/volume${refresh ? '?refresh=true' : ''}`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setResults(data);
     } catch (err) {
@@ -34,84 +36,43 @@ function VolumeScanWidget({ onSelectSymbol }) {
   const visibleRows = onlyBreakouts ? results.filter((r) => r.Breakout != null) : results;
 
   return (
-    <div
-      className="stc-header"
-      style={{
-        position: 'absolute',
-        bottom: '16px',
-        right: '16px',
-        zIndex: 20,
-        flexDirection: 'column',
-        alignItems: 'stretch',
-        gap: '6px',
-        padding: '12px',
-        width: '270px',
-      }}
-    >
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flexGrow: 1, minHeight: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <strong style={{ fontSize: '13px' }}>{t.volumeScan}</strong>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <button
-            className="stc-btn"
-            style={{ padding: '4px 8px', fontSize: '11px' }}
-            onClick={() => loadScan(hasScanned)}
-            disabled={loading}
-          >
-            {loading ? '...' : hasScanned ? t.refresh : t.scan}
-          </button>
-          <button
-            className="stc-btn"
-            style={{ padding: '4px 8px', fontSize: '11px' }}
-            onClick={() => setCollapsed((c) => !c)}
-          >
-            {collapsed ? '▲' : '▼'}
-          </button>
-        </div>
+        <span className="stc-panel-title">{t.volumeScan}</span>
+        <button className="stc-btn" onClick={() => loadScan(hasScanned)} disabled={loading}>
+          {loading ? '…' : hasScanned ? t.refresh : t.scan}
+        </button>
       </div>
 
-      {error && <p style={{ color: '#ef5350', fontSize: '12px', margin: 0 }}>{error}</p>}
+      {error && <p style={{ color: 'var(--down)', fontSize: '12px', margin: 0 }}>{error}</p>}
 
-      {!hasScanned && !loading && (
-        <p style={{ opacity: 0.6, fontSize: '11px', margin: 0 }}>
-          {t.scanHint(563)}
-        </p>
-      )}
+      {!hasScanned && !loading && <p className="stc-muted">{t.scanHint(563)}</p>}
 
-      {hasScanned && !collapsed && (
-        <label style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={onlyBreakouts}
-            onChange={(e) => setOnlyBreakouts(e.target.checked)}
-          />
+      {hasScanned && (
+        <label className="stc-checkbox-row" style={{ fontSize: '13px', padding: '4px 0' }}>
+          <input type="checkbox" checked={onlyBreakouts} onChange={(e) => setOnlyBreakouts(e.target.checked)} />
           {t.onlyBreakouts}
         </label>
       )}
 
-      {!collapsed && (
-        <div style={{ overflowY: 'auto', maxHeight: '260px' }}>
-          <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+      {hasScanned && (
+        <div style={{ overflowY: 'auto', flexGrow: 1, minHeight: 0, border: '1px solid var(--panel-border)', borderRadius: '3px' }}>
+          <table style={{ width: '100%', fontSize: '12.5px', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ textAlign: 'left', opacity: 0.6 }}>
-                <th>{t.colSymbol}</th>
-                <th>RVOL</th>
-                <th>{t.colClose}</th>
-                <th title={t.breakoutTitle}>{t.colBreakout}</th>
+              <tr className="stc-mono" style={{ color: 'var(--text-dim)', fontSize: '11px', position: 'sticky', top: 0, background: 'var(--panel-bg)' }}>
+                <th style={firstCell}>{t.colSymbol}</th>
+                <th style={cell}>RVOL</th>
+                <th style={cell}>{t.colClose}</th>
+                <th style={cell} title={t.breakoutTitle}>{t.colBreakout}</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stc-mono">
               {visibleRows.map((row) => (
-                <tr
-                  key={row.Symbol}
-                  onClick={() => onSelectSymbol(row.Symbol)}
-                  style={{ cursor: 'pointer' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--btn-bg-hover)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <td>{row.Symbol}</td>
-                  <td>{formatRvol(row.RVOL)}</td>
-                  <td>{row.Close}</td>
-                  <td style={{ color: row.Breakout != null ? '#26a69a' : undefined }}>
+                <tr key={row.Symbol} className="stc-row" onClick={() => onSelectSymbol(row.Symbol)}>
+                  <td style={{ ...firstCell, color: 'var(--text-strong)', fontWeight: 600 }}>{row.Symbol}</td>
+                  <td style={cell}>{formatRvol(row.RVOL)}</td>
+                  <td style={cell}>{row.Close}</td>
+                  <td style={{ ...cell, color: row.Breakout != null ? 'var(--up)' : 'var(--text-dim)' }}>
                     {row.Breakout != null ? `↑ ${row.Breakout}` : '-'}
                   </td>
                 </tr>

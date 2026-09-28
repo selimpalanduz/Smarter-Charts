@@ -1,9 +1,10 @@
 import { useT } from './i18n.js';
+import { CloseIcon } from './icons.jsx';
 
 const HORIZONS = [5, 20, 60];
 const FORWARD_BARS = 60;
-const UP = '#26a69a';
-const DOWN = '#ef5350';
+const UP = 'var(--up)';
+const DOWN = 'var(--down)';
 
 function formatChange(pct) {
   if (pct == null) return '-';
@@ -41,37 +42,30 @@ function Sparkline({ pattern, path }) {
       <line x1={x(split)} x2={x(split)} y1={0} y2={height} stroke="currentColor" strokeOpacity="0.2" />
       <polyline points={points(pattern)} fill="none" stroke="currentColor" strokeOpacity="0.45" strokeDasharray="3 2" />
       <polyline points={points(path.slice(0, split + 1))} fill="none" stroke="var(--accent)" strokeWidth="1.5" />
-      <polyline points={points(forward, split)} fill="none" stroke={forwardColor} strokeWidth="1.5" />
+      <polyline points={points(forward, split)} fill="none" style={{ stroke: forwardColor }} strokeWidth="1.5" />
     </svg>
   );
 }
 
 function PatternSearchWidget({ state, onClose }) {
-  const { loading, error, data } = state;
   const t = useT();
+  if (!state) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <span className="stc-panel-title">{t.similarPatterns}</span>
+        <p className="stc-muted">{t.patternEmpty}</p>
+      </div>
+    );
+  }
+  const { loading, error, data } = state;
   const errorText = error && (t.patternErrors[error.code]?.(error.limit) ?? error.message);
 
   return (
-    <div
-      className="stc-header"
-      style={{
-        position: 'absolute',
-        bottom: '16px',
-        left: '16px',
-        zIndex: 20,
-        flexDirection: 'column',
-        alignItems: 'stretch',
-        gap: '8px',
-        padding: '12px',
-        width: '330px',
-        fontSize: '12px',
-        color: 'var(--text)',
-      }}
-    >
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12.5px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <strong style={{ fontSize: '13px' }}>{t.similarPatterns}</strong>
-        <button className="stc-btn" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={onClose}>
-          ✕
+        <span className="stc-panel-title">{t.similarPatterns}</span>
+        <button className="stc-icon-btn" onClick={onClose} aria-label={t.close} title={t.close}>
+          <CloseIcon size={15} />
         </button>
       </div>
 
@@ -86,11 +80,11 @@ function PatternSearchWidget({ state, onClose }) {
 
           {data.matches.length === 0 && <span style={{ opacity: 0.6 }}>{t.noMatches}</span>}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', maxHeight: '340px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
             {data.matches.map((m) => (
-              <div key={m.start} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <div key={m.start} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 0', borderTop: '1px solid var(--panel-border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>
+                  <span className="stc-mono">
                     {formatDate(m.start)} – {formatDate(m.end)}
                   </span>
                   <span style={{ opacity: 0.7 }} title={t.similarityTitle}>
@@ -99,7 +93,7 @@ function PatternSearchWidget({ state, onClose }) {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <Sparkline pattern={data.pattern} path={m.path} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <div className="stc-mono" style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     {HORIZONS.map((h) => (
                       <span key={h}>
                         <span style={{ opacity: 0.6 }}>{t.daysShort(h)} </span>
