@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from './config.js';
+import { useT } from './i18n.js';
 
 const UP = '#26a69a';
 const DOWN = '#ef5350';
@@ -22,19 +23,20 @@ function formatDateTime(value) {
 
 // Rough reading of how much of the move the market explains.
 // Hareketin ne kadarını piyasanın açıkladığına dair kaba bir yorum.
-function marketNote(move) {
+function marketNote(move, t) {
   const { pct, indexPct } = move;
   if (indexPct == null) return null;
   if (Math.sign(pct) === Math.sign(indexPct) && Math.abs(indexPct) >= Math.abs(pct) * 0.6) {
-    return 'Hareketin büyük kısmı piyasa geneliyle uyumlu.';
+    return t.marketDriven;
   }
   if (Math.abs(move.relPct) >= Math.abs(pct) * 0.6) {
-    return 'Hareket büyük ölçüde hisseye özel.';
+    return t.stockSpecific;
   }
   return null;
 }
 
 function DisclosureItem({ disclosure, text }) {
+  const t = useT();
   return (
     <div
       style={{
@@ -50,10 +52,10 @@ function DisclosureItem({ disclosure, text }) {
         {formatDateTime(disclosure.publishedAt)} · {disclosure.subject}
       </span>
       <strong style={{ fontSize: '14.5px' }}>{disclosure.summary || disclosure.subject}</strong>
-      {text === undefined && !disclosure.routine && <span style={{ opacity: 0.5 }}>Metin yükleniyor...</span>}
+      {text === undefined && !disclosure.routine && <span style={{ opacity: 0.5 }}>{t.textLoading}</span>}
       {text && <span style={{ opacity: 0.85, lineHeight: 1.5 }}>{text}</span>}
       <a href={disclosure.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', fontSize: '12.5px' }}>
-        KAP'ta aç ↗
+        {t.openOnKap}
       </a>
     </div>
   );
@@ -61,6 +63,7 @@ function DisclosureItem({ disclosure, text }) {
 
 function MoveReasonsWidget({ move, onClose }) {
   const [texts, setTexts] = useState({});
+  const t = useT();
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +84,7 @@ function MoveReasonsWidget({ move, onClose }) {
     };
   }, [move]);
 
-  const note = marketNote(move);
+  const note = marketNote(move, t);
 
   return (
     <div
@@ -104,7 +107,7 @@ function MoveReasonsWidget({ move, onClose }) {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <strong style={{ fontSize: '17px' }}>{formatDateTime(move.date)} · Neden oldu?</strong>
+        <strong style={{ fontSize: '17px' }}>{t.whyTitle(formatDateTime(move.date))}</strong>
         <button className="stc-btn" style={{ padding: '4px 10px', fontSize: '13px' }} onClick={onClose}>
           ✕
         </button>
@@ -112,10 +115,10 @@ function MoveReasonsWidget({ move, onClose }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
         {[
-          ['Hisse', formatChange(move.pct), changeColor(move.pct)],
+          [t.stock, formatChange(move.pct), changeColor(move.pct)],
           ['XU100', formatChange(move.indexPct), changeColor(move.indexPct)],
-          ['Endekse göre', formatChange(move.relPct), changeColor(move.relPct)],
-          ['Hacim', move.rvol != null ? `${move.rvol}x ort.` : '-'],
+          [t.vsIndex, formatChange(move.relPct), changeColor(move.relPct)],
+          [t.volume, move.rvol != null ? t.rvolValue(move.rvol) : '-'],
         ].map(([label, value, color]) => (
           <div key={label} style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ opacity: 0.6, fontSize: '12.5px' }}>{label}</span>
@@ -126,9 +129,9 @@ function MoveReasonsWidget({ move, onClose }) {
 
       {note && <span style={{ opacity: 0.75 }}>{note}</span>}
 
-      <strong style={{ fontSize: '15px', marginTop: '6px' }}>Bu güne ait KAP bildirimleri</strong>
+      <strong style={{ fontSize: '15px', marginTop: '6px' }}>{t.sameDayDisclosures}</strong>
       {move.disclosures.length === 0 && (
-        <span style={{ opacity: 0.6 }}>Bildirim yok. Sebep piyasa geneli ya da haber/söylenti olabilir.</span>
+        <span style={{ opacity: 0.6 }}>{t.noDisclosures}</span>
       )}
       {move.disclosures.map((d) => (
         <DisclosureItem key={d.id} disclosure={d} text={texts[d.id]} />
@@ -136,7 +139,7 @@ function MoveReasonsWidget({ move, onClose }) {
 
       {move.earlier.length > 0 && (
         <>
-          <strong style={{ fontSize: '15px', marginTop: '6px' }}>Önceki 2 işlem günü</strong>
+          <strong style={{ fontSize: '15px', marginTop: '6px' }}>{t.previousDays}</strong>
           {move.earlier.map((d) => (
             <DisclosureItem key={d.id} disclosure={d} text={texts[d.id]} />
           ))}

@@ -34,7 +34,7 @@ def find_similar(symbol: str, start: str, end: str) -> dict:
     price_cache.ensure_cached(symbol)
     df = price_cache.query_range(symbol, "1900-01-01", datetime.now().strftime("%Y-%m-%d"))
     if df.empty:
-        raise ValueError("Fiyat verisi bulunamadı")
+        raise ValueError("no_data")
 
     dates = df.index.strftime("%Y-%m-%d").to_numpy()
     closes = df["Close"].to_numpy(dtype=float)
@@ -43,9 +43,9 @@ def find_similar(symbol: str, start: str, end: str) -> dict:
     pe = int(np.searchsorted(dates, end, side="right")) - 1
     length = pe - ps + 1
     if length < MIN_BARS:
-        raise ValueError(f"En az {MIN_BARS} bar seçmelisin")
+        raise ValueError("min_bars", MIN_BARS)
     if length > MAX_BARS:
-        raise ValueError(f"En fazla {MAX_BARS} bar seçebilirsin")
+        raise ValueError("max_bars", MAX_BARS)
 
     log_closes = np.log(closes)
     pattern = _zscore_rows(log_closes[ps : pe + 1][None, :])[0]

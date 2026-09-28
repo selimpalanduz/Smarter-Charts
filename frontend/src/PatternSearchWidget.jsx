@@ -1,3 +1,5 @@
+import { useT } from './i18n.js';
+
 const HORIZONS = [5, 20, 60];
 const FORWARD_BARS = 60;
 const UP = '#26a69a';
@@ -46,6 +48,8 @@ function Sparkline({ pattern, path }) {
 
 function PatternSearchWidget({ state, onClose }) {
   const { loading, error, data } = state;
+  const t = useT();
+  const errorText = error && (t.patternErrors[error.code]?.(error.limit) ?? error.message);
 
   return (
     <div
@@ -65,22 +69,22 @@ function PatternSearchWidget({ state, onClose }) {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <strong style={{ fontSize: '13px' }}>Benzer Formasyonlar</strong>
+        <strong style={{ fontSize: '13px' }}>{t.similarPatterns}</strong>
         <button className="stc-btn" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={onClose}>
           ✕
         </button>
       </div>
 
-      {loading && <span style={{ opacity: 0.6 }}>Aranıyor...</span>}
-      {error && <span style={{ color: DOWN }}>{error}</span>}
+      {loading && <span style={{ opacity: 0.6 }}>{t.searching}</span>}
+      {error && <span style={{ color: DOWN }}>{errorText}</span>}
 
       {data && (
         <>
           <span style={{ opacity: 0.7 }}>
-            Seçim: {formatDate(data.start)} – {formatDate(data.end)} ({data.bars} bar)
+            {t.selection(formatDate(data.start), formatDate(data.end), data.bars)}
           </span>
 
-          {data.matches.length === 0 && <span style={{ opacity: 0.6 }}>Benzer dönem bulunamadı.</span>}
+          {data.matches.length === 0 && <span style={{ opacity: 0.6 }}>{t.noMatches}</span>}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', maxHeight: '340px' }}>
             {data.matches.map((m) => (
@@ -89,8 +93,8 @@ function PatternSearchWidget({ state, onClose }) {
                   <span>
                     {formatDate(m.start)} – {formatDate(m.end)}
                   </span>
-                  <span style={{ opacity: 0.7 }} title="Log fiyat korelasyonu">
-                    %{m.similarity.toFixed(0)} benzer
+                  <span style={{ opacity: 0.7 }} title={t.similarityTitle}>
+                    {t.similarity(m.similarity.toFixed(0))}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -98,7 +102,7 @@ function PatternSearchWidget({ state, onClose }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     {HORIZONS.map((h) => (
                       <span key={h}>
-                        <span style={{ opacity: 0.6 }}>{h}g </span>
+                        <span style={{ opacity: 0.6 }}>{t.daysShort(h)} </span>
                         <span style={{ color: changeColor(m.returns[h]) }}>{formatChange(m.returns[h])}</span>
                       </span>
                     ))}
@@ -121,9 +125,9 @@ function PatternSearchWidget({ state, onClose }) {
                 const s = data.summary[h];
                 return (
                   <div key={h} style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ opacity: 0.6 }}>{h} gün sonra</span>
-                    <span style={{ color: changeColor(s?.avg), fontWeight: 600 }}>ort. {formatChange(s?.avg)}</span>
-                    <span style={{ opacity: 0.7 }}>{s ? `${s.up}/${s.count} yükseldi` : '-'}</span>
+                    <span style={{ opacity: 0.6 }}>{t.daysLater(h)}</span>
+                    <span style={{ color: changeColor(s?.avg), fontWeight: 600 }}>{t.average(formatChange(s?.avg))}</span>
+                    <span style={{ opacity: 0.7 }}>{s ? t.rose(s.up, s.count) : '-'}</span>
                   </div>
                 );
               })}
@@ -131,7 +135,7 @@ function PatternSearchWidget({ state, onClose }) {
           )}
 
           <span style={{ opacity: 0.5, fontSize: '11px' }}>
-            Gri kesikli: senin seçimin. Renkli: geçmişteki eşleşme ve sonraki {FORWARD_BARS} gün.
+            {t.sparklineLegend(FORWARD_BARS)}
           </span>
         </>
       )}

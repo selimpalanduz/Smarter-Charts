@@ -18,6 +18,7 @@ import VolumeScanWidget from './VolumeScanWidget.jsx';
 import PatternSearchWidget from './PatternSearchWidget.jsx';
 import MoveReasonsWidget from './MoveReasonsWidget.jsx';
 import { API_BASE } from './config.js';
+import { STRINGS, LangContext } from './i18n.js';
 
 const CHUNK_MONTHS = 6;
 const EDGE_THRESHOLD = 10;
@@ -76,6 +77,15 @@ function SunIcon() {
       <line x1="20" y1="12" x2="22" y2="12" />
       <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
       <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
     </svg>
   );
 }
@@ -154,14 +164,14 @@ const PANE0_SERIES = [
 
 // Overlay toggle groups (share pane 0 with the candles — simple show/hide).
 const OVERLAY_GROUPS = [
-  { id: 'sma20', label: 'SMA 20', keys: ['sma20'] },
-  { id: 'ema12', label: 'EMA 12', keys: ['ema12'] },
-  { id: 'bb', label: 'Bollinger Bands', keys: ['bbUpper', 'bbMiddle', 'bbLower'] },
-  { id: 'vwap', label: 'VWAP', keys: ['vwap'] },
-  { id: 'supertrend', label: 'Supertrend', keys: ['supertrendUp', 'supertrendDown'] },
-  { id: 'srZones', label: 'Destek/Direnç', keys: [] },
-  { id: 'earnings', label: 'Bilançolar', keys: [] },
-  { id: 'moves', label: 'Sert Hareketler', keys: [] },
+  { id: 'sma20', keys: ['sma20'] },
+  { id: 'ema12', keys: ['ema12'] },
+  { id: 'bb', keys: ['bbUpper', 'bbMiddle', 'bbLower'] },
+  { id: 'vwap', keys: ['vwap'] },
+  { id: 'supertrend', keys: ['supertrendUp', 'supertrendDown'] },
+  { id: 'srZones', keys: [] },
+  { id: 'earnings', keys: [] },
+  { id: 'moves', keys: [] },
 ];
 
 // Groups that get their OWN dedicated pane. This array's order is the fixed
@@ -172,11 +182,11 @@ const OVERLAY_GROUPS = [
 // simple (always contiguous 1..N) instead of tracking shifting indices.
 const DEDICATED_GROUPS = [
   {
-    id: 'volume', label: 'Volume', stretch: 1,
+    id: 'volume', stretch: 1,
     series: [{ key: 'volume', type: HistogramSeries, options: { priceFormat: { type: 'volume' } }, data: volumeData }],
   },
   {
-    id: 'rsi', label: 'RSI', stretch: 1.2,
+    id: 'rsi', stretch: 1.2,
     series: [{ key: 'rsi', type: LineSeries, options: { color: '#a67bd6', lineWidth: 1.5, title: 'RSI14' }, data: (rows) => lineData(rows, 'RSI_14') }],
     priceLines: [
       { price: 70, color: '#e5484d', lineStyle: 2, lineWidth: 1, title: '70' },
@@ -185,7 +195,7 @@ const DEDICATED_GROUPS = [
     priceLineTargetKey: 'rsi',
   },
   {
-    id: 'macd', label: 'MACD', stretch: 1.2,
+    id: 'macd', stretch: 1.2,
     series: [
       { key: 'macd', type: LineSeries, options: { color: '#2a78d6', lineWidth: 1.5, title: 'MACD' }, data: (rows) => lineData(rows, 'MACD') },
       { key: 'macdSignal', type: LineSeries, options: { color: '#eda100', lineWidth: 1.5, title: 'Signal' }, data: (rows) => lineData(rows, 'MACD_Signal') },
@@ -193,7 +203,7 @@ const DEDICATED_GROUPS = [
     ],
   },
   {
-    id: 'stoch', label: 'Stochastic', stretch: 1.2,
+    id: 'stoch', stretch: 1.2,
     series: [
       { key: 'stochK', type: LineSeries, options: { color: '#2a78d6', lineWidth: 1.5, title: '%K' }, data: (rows) => lineData(rows, 'Stoch_K') },
       { key: 'stochD', type: LineSeries, options: { color: '#eda100', lineWidth: 1.5, title: '%D' }, data: (rows) => lineData(rows, 'Stoch_D') },
@@ -205,19 +215,19 @@ const DEDICATED_GROUPS = [
     priceLineTargetKey: 'stochK',
   },
   {
-    id: 'adx', label: 'ADX', stretch: 1,
+    id: 'adx', stretch: 1,
     series: [{ key: 'adx', type: LineSeries, options: { color: '#52514e', lineWidth: 1.5, title: 'ADX14' }, data: (rows) => lineData(rows, 'ADX_14') }],
   },
   {
-    id: 'atr', label: 'ATR', stretch: 1,
+    id: 'atr', stretch: 1,
     series: [{ key: 'atr', type: LineSeries, options: { color: '#d9822b', lineWidth: 1.5, title: 'ATR14' }, data: (rows) => lineData(rows, 'ATR_14') }],
   },
   {
-    id: 'obv', label: 'OBV', stretch: 1,
+    id: 'obv', stretch: 1,
     series: [{ key: 'obv', type: LineSeries, options: { color: '#3d8c5f', lineWidth: 1.5, title: 'OBV' }, data: (rows) => lineData(rows, 'OBV') }],
   },
   {
-    id: 'pe', label: 'P/E (F/K)', stretch: 1,
+    id: 'pe', stretch: 1,
     series: [
       { key: 'pe', type: LineSeries, options: { color: '#c2410c', lineWidth: 1.5, title: 'P/E' }, data: (rows) => lineData(rows, 'PE') },
       { key: 'peYoy', type: LineSeries, options: { color: '#64748b', lineWidth: 1, lineStyle: 2, title: 'P/E (1y ago)' }, data: (rows) => lineData(rows, 'PE_PrevYear') },
@@ -227,14 +237,20 @@ const DEDICATED_GROUPS = [
 
 const TOGGLE_GROUPS = [
   ...OVERLAY_GROUPS,
-  ...DEDICATED_GROUPS.map((g) => ({ id: g.id, label: g.label })),
+  ...DEDICATED_GROUPS.map((g) => ({ id: g.id })),
+];
+
+const OTHER_TOOL_IDS = ['srZones', 'earnings', 'moves'];
+const PANEL_SECTIONS = [
+  { titleKey: 'sectionIndicators', groups: TOGGLE_GROUPS.filter((g) => !OTHER_TOOL_IDS.includes(g.id)) },
+  { titleKey: 'sectionOther', groups: TOGGLE_GROUPS.filter((g) => OTHER_TOOL_IDS.includes(g.id)) },
 ];
 
 const DRAWING_TOOLS = [
-  { id: 'horizontal', label: 'Horizontal Line', clicksNeeded: 1 },
-  { id: 'trendline', label: 'Trend Line', clicksNeeded: 2 },
-  { id: 'rectangle', label: 'Rectangle', clicksNeeded: 2 },
-  { id: 'pattern', label: 'Formasyon Ara', clicksNeeded: 2 },
+  { id: 'horizontal', clicksNeeded: 1 },
+  { id: 'trendline', clicksNeeded: 2 },
+  { id: 'rectangle', clicksNeeded: 2 },
+  { id: 'pattern', clicksNeeded: 2 },
 ];
 
 const TWO_POINT_TOOLS = ['trendline', 'rectangle', 'pattern'];
@@ -245,7 +261,7 @@ async function fetchRange(symbol, start, end) {
   const url = `${API_BASE}/api/price/${symbol}?start=${toISO(start)}&end=${toISO(end)}`;
   const res = await fetch(url);
   if (!res.ok) {
-    let detail = `Server error: ${res.status}`;
+    let detail = `HTTP ${res.status}`;
     try {
       const body = await res.json();
       if (body?.detail) detail = body.detail;
@@ -261,21 +277,27 @@ async function fetchPatterns(symbol, start, end) {
   const url = `${API_BASE}/api/patterns/${symbol}?start=${start}&end=${end}`;
   const res = await fetch(url);
   const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.detail || `Server error: ${res.status}`);
+  if (!res.ok) {
+    const detail = body?.detail;
+    const err = new Error(typeof detail === 'string' ? detail : `HTTP ${res.status}`);
+    err.code = detail?.code;
+    err.limit = detail?.limit;
+    throw err;
+  }
   return body;
 }
 
 async function fetchSrZones(symbol) {
   const url = `${API_BASE}/api/sr/${symbol}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function fetchEarnings(symbol) {
   const url = `${API_BASE}/api/earnings/${symbol}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
@@ -287,13 +309,13 @@ function reactionColor(pct) {
 async function fetchMoves(symbol) {
   const url = `${API_BASE}/api/moves/${symbol}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 // Earnings and sharp-move markers share one plugin so they stack instead of overlapping.
 // Bilanço ve sert hareket işaretleri üst üste binmesin diye tek eklentiyi paylaşır.
-function applyMarkers(markersPlugin, earningsData, earningsVisible, movesData, movesVisible) {
+function applyMarkers(markersPlugin, earningsData, earningsVisible, movesData, movesVisible, earningsLetter) {
   if (!markersPlugin) return;
   const markers = [];
   if (earningsVisible && earningsData) {
@@ -303,7 +325,7 @@ function applyMarkers(markersPlugin, earningsData, earningsVisible, movesData, m
         position: 'belowBar',
         shape: 'circle',
         color: reactionColor(ev.reactionPct),
-        text: 'B',
+        text: earningsLetter,
       });
     });
   }
@@ -336,11 +358,15 @@ function timeToISO(time) {
   return null;
 }
 
-function formatTL(value) {
+function formatTL(value, str) {
   if (value == null) return '-';
   const abs = Math.abs(value);
-  if (abs >= 1e9) return `${(value / 1e9).toFixed(2)} milyar TL`;
-  return `${(value / 1e6).toFixed(1)} milyon TL`;
+  if (abs >= 1e9) return `${(value / 1e9).toFixed(2)} ${str.billionTL}`;
+  return `${(value / 1e6).toFixed(1)} ${str.millionTL}`;
+}
+
+function applySeriesTitles(seriesMap, titles) {
+  Object.entries(titles).forEach(([key, title]) => seriesMap[key]?.applyOptions({ title }));
 }
 
 function formatPct(value) {
@@ -441,14 +467,14 @@ function App() {
   const loadedDataRef = useRef([]);
   const [error, setError] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
-  const [visibility, setVisibility] = useState(() => {
-    const v = Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, true]));
-    // Optional feature, off by default.
-    // Opsiyonel özellik, varsayılan kapalı.
-    v.srZones = false;
-    return v;
-  });
+  const [lang, setLang] = useState('en');
+  const langRef = useRef(lang);
+  const str = STRINGS[lang];
+  // Everything starts hidden; the user turns on what they need.
+  // Her şey kapalı başlar; kullanıcı ihtiyacı olanı açar.
+  const [visibility, setVisibility] = useState(() => Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, false])));
 
   const srZonesRef = useRef(null);
   const srPrimitivesRef = useRef([]);
@@ -525,6 +551,7 @@ function App() {
     const isDedicated = DEDICATED_GROUPS.some((g) => g.id === groupId);
     if (isDedicated) {
       rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
+      applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
       renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     } else {
       const group = OVERLAY_GROUPS.find((g) => g.id === groupId);
@@ -557,6 +584,7 @@ function App() {
     const chart = chartRef.current;
     if (chart) {
       rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
+      applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
       renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     }
   }
@@ -567,7 +595,8 @@ function App() {
       earningsRef.current,
       earningsVisibleRef.current,
       movesRef.current,
-      movesVisibleRef.current
+      movesVisibleRef.current,
+      STRINGS[langRef.current].earningsMarker
     );
   }
 
@@ -720,7 +749,9 @@ function App() {
       const data = await fetchPatterns(symbol, start, end);
       if (requestId === patternRequestRef.current) setPatternSearch({ loading: false, error: null, data });
     } catch (err) {
-      if (requestId === patternRequestRef.current) setPatternSearch({ loading: false, error: err.message, data: null });
+      if (requestId === patternRequestRef.current) {
+        setPatternSearch({ loading: false, error: { code: err.code, limit: err.limit, message: err.message }, data: null });
+      }
     }
   }
 
@@ -857,15 +888,19 @@ function App() {
           crosshair: {
             mode: CrosshairMode.Normal,
           },
+          localization: { locale: STRINGS[langRef.current].locale },
         });
         chartRef.current = chart;
 
         PANE0_SERIES.forEach(({ key, type, options }) => {
-          seriesMapRef.current[key] = chart.addSeries(type, options, 0);
+          const group = OVERLAY_GROUPS.find((g) => g.keys.includes(key));
+          const visible = group ? visibility[group.id] : true;
+          seriesMapRef.current[key] = chart.addSeries(type, { ...options, visible }, 0);
         });
         chart.panes()[0].setStretchFactor(MAIN_PANE_STRETCH);
 
         rebuildDedicatedPanes(chart, seriesMapRef.current, visibility);
+        applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
 
         loadedData = data;
         loadedDataRef.current = loadedData;
@@ -998,336 +1033,399 @@ function App() {
     });
   }, [darkMode]);
 
+  useEffect(() => {
+    langRef.current = lang;
+    document.documentElement.lang = lang;
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions({ localization: { locale: STRINGS[lang].locale } });
+    applySeriesTitles(seriesMapRef.current, STRINGS[lang].seriesTitles);
+    refreshMarkers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
+
   const allVisible = TOGGLE_GROUPS.every((g) => visibility[g.id]);
   const canExtend = selectedDrawing && typeof selectedDrawing.getExtend === 'function';
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        height: '100vh',
-        width: '100%',
-        overflow: 'hidden',
-        backgroundColor: t.pageBg,
-        '--panel-bg': t.panelBg,
-        '--panel-border': t.panelBorder,
-        '--text': t.text,
-        '--text-dim': t.textDim,
-        '--btn-bg': t.btnBg,
-        '--btn-bg-hover': t.btnBgHover,
-        '--btn-border': t.btnBorder,
-        '--input-bg': t.inputBg,
-        '--accent': t.accent,
-        '--accent-hover': t.accentHover,
-        '--accent-ring': t.accentRing,
-      }}
-    >
-      <style>{`
-        .stc-header {
-          background: var(--panel-bg);
-          backdrop-filter: blur(14px) saturate(180%);
-          -webkit-backdrop-filter: blur(14px) saturate(180%);
-          border: 1px solid var(--panel-border);
-          border-radius: 14px;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
-          padding: 10px 12px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          transition: background-color 200ms ease, border-color 200ms ease;
-        }
-        .stc-title {
-          font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
-          font-weight: 700;
-          font-size: 15px;
-          letter-spacing: 0.02em;
-          color: var(--text);
-          margin: 0;
-          padding: 0 4px;
-          transition: color 200ms ease;
-        }
-        .stc-input {
-          font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
-          font-size: 13px;
-          border: 1px solid var(--btn-border);
-          background: var(--input-bg);
-          color: var(--text);
-          border-radius: 8px;
-          padding: 7px 10px;
-          width: 100px;
-          outline: none;
-          transition: border-color 150ms ease, box-shadow 150ms ease, background-color 200ms ease, color 200ms ease;
-        }
-        .stc-input:focus {
-          border-color: var(--accent);
-          box-shadow: 0 0 0 3px var(--accent-ring);
-        }
-        .stc-btn {
-          font-family: ui-sans-serif, system-ui, sans-serif;
-          font-size: 13px;
-          font-weight: 500;
-          border: 1px solid var(--btn-border);
-          background: var(--btn-bg);
-          color: var(--text);
-          border-radius: 8px;
-          padding: 7px 14px;
-          cursor: pointer;
-          transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease, color 200ms ease;
-        }
-        .stc-btn:hover {
-          background: var(--btn-bg-hover);
-          transform: translateY(-1px);
-          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
-        }
-        .stc-btn:active {
-          transform: translateY(0);
-        }
-        .stc-btn:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
-          transform: none;
-          box-shadow: none;
-        }
-        .stc-btn-primary {
-          background: var(--accent);
-          border-color: var(--accent);
-          color: white;
-        }
-        .stc-btn-primary:hover {
-          background: var(--accent-hover);
-          box-shadow: 0 4px 10px var(--accent-ring);
-        }
-        .stc-btn-active {
-          background: var(--accent);
-          border-color: var(--accent);
-          color: white;
-        }
-        .stc-theme-toggle {
-          width: 30px;
-          height: 30px;
-          border-radius: 50%;
-          border: 1px solid var(--btn-border);
-          background: var(--btn-bg);
-          color: var(--text);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          padding: 0;
-          transition: background-color 150ms ease, transform 200ms ease, box-shadow 150ms ease, color 200ms ease;
-        }
-        .stc-theme-toggle:hover {
-          background: var(--btn-bg-hover);
-          transform: translateY(-1px) rotate(20deg);
-          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
-        }
-        .stc-toggle-all {
-          font-family: ui-sans-serif, system-ui, sans-serif;
-          font-size: 22px;
-          font-weight: 600;
-          border: 1px solid var(--btn-border);
-          background: var(--btn-bg);
-          color: var(--text);
-          border-radius: 10px;
-          padding: 12px 18px;
-          cursor: pointer;
-          transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
-          margin-bottom: 10px;
-          width: 100%;
-        }
-        .stc-toggle-all:hover {
-          background: var(--btn-bg-hover);
-          transform: translateY(-1px);
-          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
-        }
-        .stc-checkbox-row {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          font-family: ui-sans-serif, system-ui, sans-serif;
-          font-size: 27px;
-          color: var(--text-dim);
-          padding: 10px 12px;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: background-color 120ms ease, color 200ms ease;
-        }
-        .stc-checkbox-row:hover {
-          background: var(--btn-bg-hover);
-        }
-        .stc-checkbox-row input[type="checkbox"] {
-          width: 22px;
-          height: 22px;
-          cursor: pointer;
-          accent-color: var(--accent);
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .stc-btn, .stc-input, .stc-toggle-all, .stc-theme-toggle { transition: none; }
-          .stc-btn:hover, .stc-toggle-all:hover, .stc-theme-toggle:hover { transform: none; }
-        }
-      `}</style>
-
-      <div className="stc-header" style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 20 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
-          <h2 className="stc-title">{symbol}</h2>
-          {visibility.earnings && earningsNext && (
-            <span style={{ fontSize: '11px', color: 'var(--text-dim)', padding: '0 4px' }}>
-              Sonraki bilanço: {formatDateTR(earningsNext)} (beklenen)
-            </span>
-          )}
-          <button
-            className="stc-theme-toggle"
-            onClick={() => setDarkMode((d) => !d)}
-            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {darkMode ? <MoonIcon /> : <SunIcon />}
-          </button>
-        </div>
-
-        <form onSubmit={handleSymbolSubmit} style={{ display: 'inline-flex', gap: '6px' }}>
-          <input
-            className="stc-input"
-            value={symbolInput}
-            onChange={(e) => setSymbolInput(e.target.value)}
-            placeholder="e.g. GARAN"
-          />
-          <button type="submit" className="stc-btn stc-btn-primary">Load</button>
-        </form>
-
-        <button className="stc-btn" onClick={() => setPanelOpen((open) => !open)}>Indicators</button>
-      </div>
-
-      <div className="stc-header" style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 20 }}>
-        {DRAWING_TOOLS.map((tool) => (
-          <button
-            key={tool.id}
-            className={`stc-btn ${activeTool === tool.id ? 'stc-btn-active' : ''}`}
-            onClick={() => handleSelectTool(tool.id)}
-          >
-            {tool.label}
-          </button>
-        ))}
-
-        <button
-          className={`stc-btn ${selectedExtend.left ? 'stc-btn-active' : ''}`}
-          onClick={() => handleToggleExtend('left')}
-          disabled={!canExtend}
-        >
-          Extend Left
-        </button>
-        <button
-          className={`stc-btn ${selectedExtend.right ? 'stc-btn-active' : ''}`}
-          onClick={() => handleToggleExtend('right')}
-          disabled={!canExtend}
-        >
-          Extend Right
-        </button>
-
-        <button className="stc-btn" onClick={handleDeleteSelected} disabled={!selectedDrawing}>
-          Delete selected
-        </button>
-        <button className="stc-btn" onClick={handleClearDrawings}>Clear</button>
-      </div>
-
-      {panelOpen && (
-        <div
-          className="stc-header"
-          style={{
-            position: 'absolute',
-            top: '68px',
-            left: '16px',
-            zIndex: 20,
-            flexDirection: 'column',
-            alignItems: 'stretch',
-            gap: '2px',
-            padding: '14px',
-          }}
-        >
-          <button className="stc-toggle-all" onClick={handleToggleAll}>
-            {allVisible ? 'Hide all' : 'Show all'}
-          </button>
-
-          {TOGGLE_GROUPS.map((group) => (
-            <label key={group.id} className="stc-checkbox-row">
-              <input
-                type="checkbox"
-                checked={visibility[group.id]}
-                onChange={() => handleToggle(group.id)}
-              />
-              {group.label}
-            </label>
-          ))}
-        </div>
-      )}
-
-      {error && (
-        <p style={{ position: 'absolute', top: '68px', left: '16px', zIndex: 20, color: '#ef5350' }}>
-          Error: {error}
-        </p>
-      )}
-
-      <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
-
-      {patternSearch && <PatternSearchWidget state={patternSearch} onClose={handleClosePatternSearch} />}
-
-      {moveDetail && <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />}
-
-      {barChangeTip && (
-        <div
-          style={{
-            position: 'absolute',
-            left: barChangeTip.x,
-            top: barChangeTip.y - 8,
-            transform: 'translate(-50%, -100%)',
-            zIndex: 25,
-            padding: '2px 6px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: '#ffffff',
-            background: reactionColor(barChangeTip.pct),
-            pointerEvents: 'none',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {formatChange(barChangeTip.pct)}
-        </div>
-      )}
-
-      {earningsTip && (
-        <div
-          className="stc-header"
-          style={{
-            position: 'absolute',
-            left: Math.max(8, Math.min(earningsTip.x + 14, window.innerWidth - 250)),
-            top: Math.max(8, earningsTip.y - 130),
-            zIndex: 30,
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: '3px',
-            padding: '10px 12px',
-            width: '230px',
-            fontSize: '12px',
-            color: 'var(--text)',
-            pointerEvents: 'none',
-          }}
-        >
-          <strong style={{ fontSize: '13px' }}>Bilanço {earningsTip.event.period}</strong>
-          <span style={{ opacity: 0.7 }}>Açıklandı: {formatDateTR(earningsTip.event.publishedAt)}</span>
-          <span>Net kâr: {formatTL(earningsTip.event.netIncome)}</span>
-          <span>Yıllık değişim: {formatPct(earningsTip.event.netIncomeYoY)}</span>
-          <span style={{ color: reactionColor(earningsTip.event.reactionPct) }}>
-            {earningsTip.event.reactionDays} günlük fiyat tepkisi: {formatPct(earningsTip.event.reactionPct)}
-          </span>
-        </div>
-      )}
-
+    <LangContext.Provider value={str}>
       <div
-        ref={chartContainerRef}
-        style={{ width: '100%', height: '100%', cursor: activeTool ? 'crosshair' : 'default' }}
-      />
-    </div>
+        style={{
+          position: 'relative',
+          height: '100vh',
+          width: '100%',
+          overflow: 'hidden',
+          backgroundColor: t.pageBg,
+          '--panel-bg': t.panelBg,
+          '--panel-border': t.panelBorder,
+          '--text': t.text,
+          '--text-dim': t.textDim,
+          '--btn-bg': t.btnBg,
+          '--btn-bg-hover': t.btnBgHover,
+          '--btn-border': t.btnBorder,
+          '--input-bg': t.inputBg,
+          '--accent': t.accent,
+          '--accent-hover': t.accentHover,
+          '--accent-ring': t.accentRing,
+        }}
+      >
+        <style>{`
+          .stc-header {
+            background: var(--panel-bg);
+            backdrop-filter: blur(14px) saturate(180%);
+            -webkit-backdrop-filter: blur(14px) saturate(180%);
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background-color 200ms ease, border-color 200ms ease;
+          }
+          .stc-title {
+            font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: 0.02em;
+            color: var(--text);
+            margin: 0;
+            padding: 0 4px;
+            transition: color 200ms ease;
+          }
+          .stc-input {
+            font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+            font-size: 13px;
+            border: 1px solid var(--btn-border);
+            background: var(--input-bg);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 7px 10px;
+            width: 100px;
+            outline: none;
+            transition: border-color 150ms ease, box-shadow 150ms ease, background-color 200ms ease, color 200ms ease;
+          }
+          .stc-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-ring);
+          }
+          .stc-btn {
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid var(--btn-border);
+            background: var(--btn-bg);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 7px 14px;
+            cursor: pointer;
+            transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease, color 200ms ease;
+          }
+          .stc-btn:hover {
+            background: var(--btn-bg-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+          }
+          .stc-btn:active {
+            transform: translateY(0);
+          }
+          .stc-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+          }
+          .stc-btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+          }
+          .stc-btn-primary:hover {
+            background: var(--accent-hover);
+            box-shadow: 0 4px 10px var(--accent-ring);
+          }
+          .stc-btn-active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+          }
+          .stc-theme-toggle {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 1px solid var(--btn-border);
+            background: var(--btn-bg);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+            transition: background-color 150ms ease, transform 200ms ease, box-shadow 150ms ease, color 200ms ease;
+          }
+          .stc-theme-toggle:hover {
+            background: var(--btn-bg-hover);
+            transform: translateY(-1px) rotate(20deg);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+          }
+          .stc-toggle-all {
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            border: 1px solid var(--btn-border);
+            background: var(--btn-bg);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 9px 16px;
+            cursor: pointer;
+            transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+            width: 100%;
+          }
+          .stc-toggle-all:hover {
+            background: var(--btn-bg-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+          }
+          .stc-section-title {
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            opacity: 0.7;
+            margin: 12px 4px 4px;
+          }
+          .stc-checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            column-gap: 6px;
+          }
+          .stc-checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 16px;
+            color: var(--text-dim);
+            white-space: nowrap;
+            padding: 7px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 120ms ease, color 200ms ease;
+          }
+          .stc-checkbox-row:hover {
+            background: var(--btn-bg-hover);
+          }
+          .stc-checkbox-row input[type="checkbox"] {
+            width: 17px;
+            height: 17px;
+            flex-shrink: 0;
+            cursor: pointer;
+            accent-color: var(--accent);
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .stc-btn, .stc-input, .stc-toggle-all, .stc-theme-toggle { transition: none; }
+            .stc-btn:hover, .stc-toggle-all:hover, .stc-theme-toggle:hover { transform: none; }
+          }
+        `}</style>
+
+        <div className="stc-header" style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 20 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+            <h2 className="stc-title">{symbol}</h2>
+            {visibility.earnings && earningsNext && (
+              <span style={{ fontSize: '11px', color: 'var(--text-dim)', padding: '0 4px' }}>
+                {str.nextEarnings(formatDateTR(earningsNext))}
+              </span>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                className="stc-theme-toggle"
+                onClick={() => setDarkMode((d) => !d)}
+                aria-label={darkMode ? str.lightMode : str.darkMode}
+                title={darkMode ? str.lightMode : str.darkMode}
+              >
+                {darkMode ? <MoonIcon /> : <SunIcon />}
+              </button>
+              <button
+                className="stc-btn"
+                onClick={() => setLang((l) => (l === 'en' ? 'tr' : 'en'))}
+                title={str.switchLangTitle}
+                style={{ padding: '5px 9px', fontSize: '12px', fontWeight: 700 }}
+              >
+                {str.switchLang}
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleSymbolSubmit} style={{ display: 'inline-flex', gap: '6px' }}>
+            <input
+              className="stc-input"
+              value={symbolInput}
+              onChange={(e) => setSymbolInput(e.target.value)}
+              placeholder={str.symbolPlaceholder}
+            />
+            <button type="submit" className="stc-btn stc-btn-primary">{str.load}</button>
+          </form>
+
+          <button className="stc-btn" onClick={() => setPanelOpen((open) => !open)}>{str.indicators}</button>
+        </div>
+
+        <div className="stc-header" style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 20 }}>
+          <button
+            className={`stc-btn ${!toolsOpen && (activeTool || selectedDrawing) ? 'stc-btn-active' : ''}`}
+            onClick={() => setToolsOpen((open) => !open)}
+            aria-expanded={toolsOpen}
+            title={toolsOpen ? str.hideTools : str.toolsTitle}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <PencilIcon />
+            {toolsOpen ? '›' : str.tools}
+          </button>
+
+          {toolsOpen && DRAWING_TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              className={`stc-btn ${activeTool === tool.id ? 'stc-btn-active' : ''}`}
+              onClick={() => handleSelectTool(tool.id)}
+            >
+              {str.drawingTools[tool.id]}
+            </button>
+          ))}
+
+          {toolsOpen && (
+            <>
+              <button
+                className={`stc-btn ${selectedExtend.left ? 'stc-btn-active' : ''}`}
+                onClick={() => handleToggleExtend('left')}
+                disabled={!canExtend}
+              >
+                {str.extendLeft}
+              </button>
+              <button
+                className={`stc-btn ${selectedExtend.right ? 'stc-btn-active' : ''}`}
+                onClick={() => handleToggleExtend('right')}
+                disabled={!canExtend}
+              >
+                {str.extendRight}
+              </button>
+
+              <button className="stc-btn" onClick={handleDeleteSelected} disabled={!selectedDrawing}>
+                {str.deleteSelected}
+              </button>
+              <button className="stc-btn" onClick={handleClearDrawings}>{str.clear}</button>
+            </>
+          )}
+        </div>
+
+        {panelOpen && (
+          <div
+            className="stc-header"
+            style={{
+              position: 'absolute',
+              top: '68px',
+              left: '16px',
+              zIndex: 20,
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              gap: '2px',
+              padding: '14px',
+              maxHeight: 'calc(100vh - 100px)',
+              overflowY: 'auto',
+            }}
+          >
+            <button className="stc-toggle-all" onClick={handleToggleAll}>
+              {allVisible ? str.hideAll : str.showAll}
+            </button>
+
+            {PANEL_SECTIONS.map((section) => (
+              <div key={section.titleKey}>
+                <div className="stc-section-title">{str[section.titleKey]}</div>
+                <div className="stc-checkbox-grid">
+                  {section.groups.map((group) => (
+                    <label key={group.id} className="stc-checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={visibility[group.id]}
+                        onChange={() => handleToggle(group.id)}
+                      />
+                      {str.groups[group.id]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error && (
+          <p style={{ position: 'absolute', top: '68px', left: '16px', zIndex: 20, color: '#ef5350' }}>
+            {str.loadFailed}: {error}
+          </p>
+        )}
+
+        <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
+
+        {patternSearch && <PatternSearchWidget state={patternSearch} onClose={handleClosePatternSearch} />}
+
+        {moveDetail && <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />}
+
+        {barChangeTip && (
+          <div
+            style={{
+              position: 'absolute',
+              left: barChangeTip.x,
+              top: barChangeTip.y - 8,
+              transform: 'translate(-50%, -100%)',
+              zIndex: 25,
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#ffffff',
+              background: reactionColor(barChangeTip.pct),
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {formatChange(barChangeTip.pct)}
+          </div>
+        )}
+
+        {earningsTip && (
+          <div
+            className="stc-header"
+            style={{
+              position: 'absolute',
+              left: Math.max(8, Math.min(earningsTip.x + 14, window.innerWidth - 250)),
+              top: Math.max(8, earningsTip.y - 130),
+              zIndex: 30,
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: '3px',
+              padding: '10px 12px',
+              width: '230px',
+              fontSize: '12px',
+              color: 'var(--text)',
+              pointerEvents: 'none',
+            }}
+          >
+            <strong style={{ fontSize: '13px' }}>{str.earningsTitle(earningsTip.event.period)}</strong>
+            <span style={{ opacity: 0.7 }}>{str.announced(formatDateTR(earningsTip.event.publishedAt))}</span>
+            <span>{str.netIncome(formatTL(earningsTip.event.netIncome, str))}</span>
+            <span>{str.yoyChange(formatPct(earningsTip.event.netIncomeYoY))}</span>
+            <span style={{ color: reactionColor(earningsTip.event.reactionPct) }}>
+              {str.priceReaction(earningsTip.event.reactionDays, formatPct(earningsTip.event.reactionPct))}
+            </span>
+          </div>
+        )}
+
+        <div
+          ref={chartContainerRef}
+          style={{ width: '100%', height: '100%', cursor: activeTool ? 'crosshair' : 'default' }}
+        />
+      </div>
+    </LangContext.Provider>
   );
 }
 

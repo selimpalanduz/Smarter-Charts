@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { API_BASE } from './config.js';
+import { useT } from './i18n.js';
 
 function formatRvol(value) {
   return value == null ? '-' : value.toFixed(2);
@@ -11,6 +12,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
   const [error, setError] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [onlyBreakouts, setOnlyBreakouts] = useState(false);
+  const t = useT();
 
   async function loadScan(refresh = false) {
     setLoading(true);
@@ -47,7 +49,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <strong style={{ fontSize: '13px' }}>Hacim Taraması</strong>
+        <strong style={{ fontSize: '13px' }}>{t.volumeScan}</strong>
         <div style={{ display: 'flex', gap: '4px' }}>
           <button
             className="stc-btn"
@@ -55,7 +57,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
             onClick={() => loadScan(hasScanned)}
             disabled={loading}
           >
-            {loading ? '...' : hasScanned ? 'Yenile' : 'Tara'}
+            {loading ? '...' : hasScanned ? t.refresh : t.scan}
           </button>
           <button
             className="stc-btn"
@@ -71,7 +73,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
 
       {!hasScanned && !loading && (
         <p style={{ opacity: 0.6, fontSize: '11px', margin: 0 }}>
-          563 sembolü taramak için "Tara"ya bas.
+          {t.scanHint(563)}
         </p>
       )}
 
@@ -82,7 +84,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
             checked={onlyBreakouts}
             onChange={(e) => setOnlyBreakouts(e.target.checked)}
           />
-          Sadece direnç kıranlar
+          {t.onlyBreakouts}
         </label>
       )}
 
@@ -91,10 +93,10 @@ function VolumeScanWidget({ onSelectSymbol }) {
           <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ textAlign: 'left', opacity: 0.6 }}>
-                <th>Sembol</th>
+                <th>{t.colSymbol}</th>
                 <th>RVOL</th>
-                <th>Kapanış</th>
-                <th title="Hacimle kırılan direnç seviyesi">Kırılım</th>
+                <th>{t.colClose}</th>
+                <th title={t.breakoutTitle}>{t.colBreakout}</th>
               </tr>
             </thead>
             <tbody>
