@@ -90,7 +90,9 @@ def get_moves(symbol: str) -> dict:
     by_day: dict[int, list[dict]] = {}
     for d in kap.get_disclosures(symbol, cutoff.year):
         day = d["published"].date()
-        if d["published"].time() >= MARKET_CLOSE:
+        # Buyback reports cover that day's session even when published after close.
+        # Geri alım bildirimleri kapanıştan sonra yayınlansa da o günün seansını kapsar.
+        if d["published"].time() >= MARKET_CLOSE and d["subject"] not in ROUTINE_SUBJECTS:
             day += timedelta(days=1)
         i = int(np.searchsorted(trading_days, np.datetime64(day)))
         if i < len(trading_days):

@@ -18,7 +18,7 @@ import VolumeScanWidget from './VolumeScanWidget.jsx';
 import PatternSearchWidget from './PatternSearchWidget.jsx';
 import MoveReasonsWidget from './MoveReasonsWidget.jsx';
 import { API_BASE } from './config.js';
-import { STRINGS, LangContext } from './i18n.js';
+import { STRINGS, LangContext, useT } from './i18n.js';
 import { THEME, setPalette, colors } from './theme.js';
 import {
   LogoMark,
@@ -37,6 +37,23 @@ import {
 } from './icons.jsx';
 
 const CHUNK_MONTHS = 6;
+// Must match MA_PERIODS in backend/data_provider.py.
+// backend/data_provider.py içindeki MA_PERIODS ile aynı olmalı.
+const MA_PERIODS = [5, 9, 12, 20, 21, 50, 100, 200];
+const MA_TYPES = ['SMA', 'EMA'];
+const MA_COLORS = ['#eda100', '#4a90d9', '#e5484d', '#3ddc84', '#a259d9'];
+const MAX_MAS = MA_COLORS.length;
+const DEFAULT_MAS = [
+  { type: 'SMA', period: 20 },
+  { type: 'SMA', period: 50 },
+  { type: 'SMA', period: 200 },
+];
+const MA_STORAGE_KEY = 'stc.movingAverages';
+const CROSS_FAST = 'SMA_50';
+const CROSS_SLOW = 'SMA_200';
+const PIVOT_LOOKBACK = 5;
+const DIVERGENCE_MIN_BARS = 5;
+const DIVERGENCE_MAX_BARS = 60;
 const EDGE_THRESHOLD = 10;
 const MAIN_PANE_STRETCH = 3;
 
@@ -90,12 +107,157 @@ function supertrendDownData(rows) {
   );
 }
 
+const DIVERGENCE_LINE = {
+  lineWidth: 2,
+  lastValueVisible: false,
+  priceLineVisible: false,
+  crosshairMarkerVisible: false,
+};
+
+function maColumn(ma) {
+  return `${ma.type}_${ma.period}`;
+}
+
+function maSeriesKey(ma) {
+  return `ma:${maColumn(ma)}`;
+}
+
+function loadMaConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MA_STORAGE_KEY));
+    const valid = Array.isArray(saved)
+      ? saved.filter((ma) => MA_TYPES.includes(ma?.type) && MA_PERIODS.includes(ma?.period)).slice(0, MAX_MAS)
+      : [];
+    const unique = valid.filter((ma, i) => valid.findIndex((other) => maColumn(other) === maColumn(ma)) === i);
+    return unique.length > 0 ? unique : DEFAULT_MAS;
+  } catch {
+    return DEFAULT_MAS;
+  }
+}
+
+function saveMaConfig(config) {
+  try {
+    localStorage.setItem(MA_STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // storage unavailable
+  }
+}
+
+// Adds, updates and removes the moving average series on pane 0 to match config.
+// Pane 0'daki hareketli ortalama serilerini config'e göre ekler, günceller, kaldırır.
+function syncMaSeries(chart, seriesMap, config, visible, rows) {
+  const wanted = new Set(config.map(maSeriesKey));
+  Object.keys(seriesMap)
+    .filter((key) => key.startsWith('ma:') && !wanted.has(key))
+    .forEach((key) => {
+      chart.removeSeries(seriesMap[key]);
+      delete seriesMap[key];
+    });
+  config.forEach((ma, i) => {
+    const key = maSeriesKey(ma);
+    const options = {
+      color: MA_COLORS[i],
+      lineWidth: ma.period >= 100 ? 2 : 1.5,
+      title: `${ma.type}${ma.period}`,
+      priceLineVisible: false,
+      visible,
+    };
+    if (seriesMap[key]) {
+      seriesMap[key].applyOptions(options);
+    } else {
+      seriesMap[key] = chart.addSeries(LineSeries, options, 0);
+      seriesMap[key].setData(lineData(rows, maColumn(ma)));
+    }
+  });
+}
+
+// Bars where the fast SMA crosses the slow one: golden cross up, death cross down.
+// Hızlı SMA'nın yavaşı kestiği barlar: yukarı altın kesişim, aşağı ölüm kesişimi.
+function maCrosses(rows) {
+  const crosses = [];
+  for (let i = 1; i < rows.length; i++) {
+    const prev = rows[i - 1];
+    const cur = rows[i];
+    if ([prev[CROSS_FAST], prev[CROSS_SLOW], cur[CROSS_FAST], cur[CROSS_SLOW]].some((v) => v == null)) continue;
+    const before = prev[CROSS_FAST] - prev[CROSS_SLOW];
+    const after = cur[CROSS_FAST] - cur[CROSS_SLOW];
+    if (before <= 0 && after > 0) crosses.push({ time: dateOf(cur), golden: true });
+    else if (before >= 0 && after < 0) crosses.push({ time: dateOf(cur), golden: false });
+  }
+  return crosses;
+}
+
+function isPivot(values, i, low) {
+  const v = values[i];
+  if (v == null) return false;
+  for (let k = i - PIVOT_LOOKBACK; k <= i + PIVOT_LOOKBACK; k++) {
+    if (k === i) continue;
+    const other = values[k];
+    if (other == null) return false;
+    // A tie on the left disqualifies, so a flat bottom yields a single pivot.
+    // Soldaki eşitlik pivotu geçersiz kılar, böylece düz bir dip tek pivot verir.
+    const beaten = low ? (k < i ? other <= v : other < v) : k < i ? other >= v : other > v;
+    if (beaten) return false;
+  }
+  return true;
+}
+
+// Each [a, b] pivot pair becomes one segment; a whitespace point separates unconnected pairs.
+// Her [a, b] pivot çifti bir çizgi parçası olur; bağlı olmayan çiftleri boş bir nokta ayırır.
+function divergenceLine(rows, rsi, pairs) {
+  const points = [];
+  let last = -1;
+  pairs.forEach(([a, b]) => {
+    if (a !== last) {
+      if (last >= 0 && last + 1 < a) points.push({ time: dateOf(rows[last + 1]) });
+      points.push({ time: dateOf(rows[a]), value: rsi[a] });
+    }
+    points.push({ time: dateOf(rows[b]), value: rsi[b] });
+    last = b;
+  });
+  return points;
+}
+
+const divergenceCache = new WeakMap();
+
+// Regular divergences between consecutive RSI pivots: price makes a lower low while RSI makes
+// a higher low (bullish), or price makes a higher high while RSI makes a lower high (bearish).
+// Ardışık RSI pivotları arasındaki klasik uyumsuzluklar: fiyat daha düşük dip yaparken RSI daha
+// yüksek dip yapar (yükseliş), ya da fiyat daha yüksek tepe yaparken RSI daha düşük tepe yapar (düşüş).
+function rsiDivergences(rows) {
+  const cached = divergenceCache.get(rows);
+  if (cached) return cached;
+
+  const rsi = rows.map((row) => row.RSI_14);
+  const lows = [];
+  const highs = [];
+  for (let i = PIVOT_LOOKBACK; i < rows.length - PIVOT_LOOKBACK; i++) {
+    if (isPivot(rsi, i, true)) lows.push(i);
+    if (isPivot(rsi, i, false)) highs.push(i);
+  }
+
+  const pairs = (pivots, diverges) => {
+    const result = [];
+    for (let j = 1; j < pivots.length; j++) {
+      const a = pivots[j - 1];
+      const b = pivots[j];
+      const gap = b - a;
+      if (gap >= DIVERGENCE_MIN_BARS && gap <= DIVERGENCE_MAX_BARS && diverges(a, b)) result.push([a, b]);
+    }
+    return result;
+  };
+
+  const bull = pairs(lows, (a, b) => rsi[b] > rsi[a] && rows[b].Low < rows[a].Low);
+  const bear = pairs(highs, (a, b) => rsi[b] < rsi[a] && rows[b].High > rows[a].High);
+  const result = { bull: divergenceLine(rows, rsi, bull), bear: divergenceLine(rows, rsi, bear) };
+  divergenceCache.set(rows, result);
+  return result;
+}
+
 // Series that live directly on the main price pane (pane 0) — these never
 // disappear, toggling them just flips `visible`, no pane management needed.
 const PANE0_SERIES = [
   { key: 'candle', type: CandlestickSeries, options: {}, data: (rows) => rows.map(toCandleFormat) },
-  { key: 'sma20', type: LineSeries, options: { color: '#eda100', lineWidth: 2, title: 'SMA20' }, data: (rows) => lineData(rows, 'SMA_20') },
-  { key: 'ema12', type: LineSeries, options: { color: '#4a90d9', lineWidth: 1, title: 'EMA12' }, data: (rows) => lineData(rows, 'EMA_12') },
   { key: 'bbUpper', type: LineSeries, options: { color: 'rgba(150,150,150,0.7)', lineWidth: 1, title: 'BB Upper' }, data: (rows) => lineData(rows, 'BB_Upper') },
   { key: 'bbMiddle', type: LineSeries, options: { color: 'rgba(150,150,150,0.4)', lineWidth: 1, lineStyle: 2, title: 'BB Middle' }, data: (rows) => lineData(rows, 'BB_Middle') },
   { key: 'bbLower', type: LineSeries, options: { color: 'rgba(150,150,150,0.7)', lineWidth: 1, title: 'BB Lower' }, data: (rows) => lineData(rows, 'BB_Lower') },
@@ -106,8 +268,8 @@ const PANE0_SERIES = [
 
 // Overlay toggle groups (share pane 0 with the candles — simple show/hide).
 const OVERLAY_GROUPS = [
-  { id: 'sma20', keys: ['sma20'] },
-  { id: 'ema12', keys: ['ema12'] },
+  { id: 'ma', keys: [] },
+  { id: 'maCross', keys: [] },
   { id: 'bb', keys: ['bbUpper', 'bbMiddle', 'bbLower'] },
   { id: 'vwap', keys: ['vwap'] },
   { id: 'supertrend', keys: ['supertrendUp', 'supertrendDown'] },
@@ -129,7 +291,11 @@ const DEDICATED_GROUPS = [
   },
   {
     id: 'rsi', stretch: 1.2,
-    series: [{ key: 'rsi', type: LineSeries, options: { color: '#a67bd6', lineWidth: 1.5, title: 'RSI14' }, data: (rows) => lineData(rows, 'RSI_14') }],
+    series: [
+      { key: 'rsi', type: LineSeries, options: { color: '#a67bd6', lineWidth: 1.5, title: 'RSI14' }, data: (rows) => lineData(rows, 'RSI_14') },
+      { key: 'rsiDivBull', type: LineSeries, options: { color: '#3ddc84', ...DIVERGENCE_LINE }, data: (rows) => rsiDivergences(rows).bull, visibleWhen: 'rsiDiv' },
+      { key: 'rsiDivBear', type: LineSeries, options: { color: '#e5484d', ...DIVERGENCE_LINE }, data: (rows) => rsiDivergences(rows).bear, visibleWhen: 'rsiDiv' },
+    ],
     priceLines: [
       { price: 70, color: '#e5484d', lineStyle: 2, lineWidth: 1, title: '70' },
       { price: 30, color: '#3ddc84', lineStyle: 2, lineWidth: 1, title: '30' },
@@ -177,9 +343,11 @@ const DEDICATED_GROUPS = [
   },
 ];
 
+// rsiDiv has no pane of its own; it draws inside the RSI pane.
+// rsiDiv'in kendi paneli yok; RSI panelinin içine çizer.
 const TOGGLE_GROUPS = [
   ...OVERLAY_GROUPS,
-  ...DEDICATED_GROUPS.map((g) => ({ id: g.id })),
+  ...DEDICATED_GROUPS.flatMap((g) => (g.id === 'rsi' ? [{ id: 'rsi' }, { id: 'rsiDiv' }] : [{ id: g.id }])),
 ];
 
 const OTHER_TOOL_IDS = ['srZones', 'earnings', 'moves'];
@@ -304,9 +472,20 @@ async function fetchMoves(symbol) {
 
 // Earnings and sharp-move markers share one plugin so they stack instead of overlapping.
 // Bilanço ve sert hareket işaretleri üst üste binmesin diye tek eklentiyi paylaşır.
-function applyMarkers(markersPlugin, earningsData, earningsVisible, movesData, movesVisible, earningsLetter) {
+function applyMarkers(markersPlugin, { earningsData, earningsVisible, movesData, movesVisible, rows, crossVisible, str }) {
   if (!markersPlugin) return;
   const markers = [];
+  if (crossVisible) {
+    maCrosses(rows).forEach((cross) => {
+      markers.push({
+        time: cross.time,
+        position: cross.golden ? 'belowBar' : 'aboveBar',
+        shape: 'square',
+        color: cross.golden ? '#eda100' : colors().down,
+        text: cross.golden ? str.goldenCrossMarker : str.deathCrossMarker,
+      });
+    });
+  }
   if (earningsVisible && earningsData) {
     earningsData.events.forEach((ev) => {
       markers.push({
@@ -314,7 +493,7 @@ function applyMarkers(markersPlugin, earningsData, earningsVisible, movesData, m
         position: 'belowBar',
         shape: 'circle',
         color: reactionColor(ev.reactionPct),
-        text: earningsLetter,
+        text: str.earningsMarker,
       });
     });
   }
@@ -475,6 +654,9 @@ function renderAllSeries(seriesMap, loadedData) {
   PANE0_SERIES.forEach(({ key, data }) => {
     seriesMap[key]?.setData(data(loadedData));
   });
+  Object.keys(seriesMap)
+    .filter((key) => key.startsWith('ma:'))
+    .forEach((key) => seriesMap[key].setData(lineData(loadedData, key.slice(3))));
   DEDICATED_GROUPS.forEach((group) => {
     group.series.forEach(({ key, data }) => {
       seriesMap[key]?.setData(data(loadedData));
@@ -500,8 +682,9 @@ function rebuildDedicatedPanes(chart, seriesMap, currentVisibility) {
   DEDICATED_GROUPS.forEach((group) => {
     if (!currentVisibility[group.id]) return;
 
-    group.series.forEach(({ key, type, options }) => {
-      seriesMap[key] = chart.addSeries(type, options, nextIndex);
+    group.series.forEach(({ key, type, options, visibleWhen }) => {
+      const visible = visibleWhen ? Boolean(currentVisibility[visibleWhen]) : true;
+      seriesMap[key] = chart.addSeries(type, { ...options, visible }, nextIndex);
     });
     chart.panes()[nextIndex].setStretchFactor(group.stretch);
 
@@ -512,6 +695,75 @@ function rebuildDedicatedPanes(chart, seriesMap, currentVisibility) {
 
     nextIndex += 1;
   });
+}
+
+function MaEditor({ config, onChange }) {
+  const str = useT();
+  const taken = (ma, except) => config.some((other, i) => i !== except && maColumn(other) === maColumn(ma));
+
+  function update(index, patch) {
+    const next = { ...config[index], ...patch };
+    if (taken(next, index)) return;
+    onChange(config.map((ma, i) => (i === index ? next : ma)));
+  }
+
+  function add() {
+    for (const type of MA_TYPES) {
+      const period = MA_PERIODS.find((p) => !taken({ type, period: p }, -1));
+      if (period) {
+        onChange([...config, { type, period }]);
+        return;
+      }
+    }
+  }
+
+  return (
+    <div className="stc-ma-editor">
+      {config.map((ma, i) => (
+        <div key={maColumn(ma)} className="stc-ma-row">
+          <span className="stc-ma-swatch" style={{ background: MA_COLORS[i] }} />
+          <select
+            className="stc-select"
+            value={ma.type}
+            aria-label={str.maType}
+            onChange={(e) => update(i, { type: e.target.value })}
+          >
+            {MA_TYPES.map((type) => (
+              <option key={type} value={type} disabled={taken({ type, period: ma.period }, i)}>
+                {type}
+              </option>
+            ))}
+          </select>
+          <select
+            className="stc-select"
+            value={ma.period}
+            aria-label={str.maPeriod}
+            onChange={(e) => update(i, { period: Number(e.target.value) })}
+          >
+            {MA_PERIODS.map((period) => (
+              <option key={period} value={period} disabled={taken({ type: ma.type, period }, i)}>
+                {period}
+              </option>
+            ))}
+          </select>
+          <button
+            className="stc-ma-remove"
+            aria-label={str.removeMa}
+            title={str.removeMa}
+            disabled={config.length <= 1}
+            onClick={() => onChange(config.filter((_, j) => j !== i))}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      {config.length < MAX_MAS && (
+        <button className="stc-ma-add" onClick={add}>
+          {str.addMa}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function App() {
@@ -541,6 +793,9 @@ function App() {
   const earningsVisibleRef = useRef(true);
   const movesRef = useRef(null);
   const movesVisibleRef = useRef(true);
+  const crossVisibleRef = useRef(false);
+  const [maConfig, setMaConfig] = useState(loadMaConfig);
+  const maConfigRef = useRef(maConfig);
   const [moveDetail, setMoveDetail] = useState(null);
   const [earningsTip, setEarningsTip] = useState(null);
   const [barChangeTip, setBarChangeTip] = useState(null);
@@ -604,6 +859,33 @@ function App() {
       return;
     }
 
+    if (groupId === 'ma') {
+      setMaVisible(nextVisible);
+      return;
+    }
+
+    if (groupId === 'maCross') {
+      crossVisibleRef.current = nextVisible;
+      refreshMarkers();
+      return;
+    }
+
+    if (groupId === 'rsiDiv') {
+      // Divergence lines live in the RSI pane, so turning them on also opens RSI.
+      // Uyumsuzluk çizgileri RSI panelinde, bu yüzden açılınca RSI da açılır.
+      if (nextVisible && !visibility.rsi) {
+        newVisibility.rsi = true;
+        setVisibility(newVisibility);
+        rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
+        applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
+        renderAllSeries(seriesMapRef.current, loadedDataRef.current);
+      } else {
+        seriesMapRef.current.rsiDivBull?.applyOptions({ visible: nextVisible });
+        seriesMapRef.current.rsiDivBear?.applyOptions({ visible: nextVisible });
+      }
+      return;
+    }
+
     if (groupId === 'earnings' || groupId === 'moves') {
       if (groupId === 'earnings') {
         earningsVisibleRef.current = nextVisible;
@@ -641,8 +923,10 @@ function App() {
       });
     });
     applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, target);
+    setMaVisible(target);
     earningsVisibleRef.current = target;
     movesVisibleRef.current = target;
+    crossVisibleRef.current = target;
     refreshMarkers();
     if (!target) {
       setEarningsTip(null);
@@ -658,14 +942,29 @@ function App() {
   }
 
   function refreshMarkers() {
-    applyMarkers(
-      earningsMarkersRef.current,
-      earningsRef.current,
-      earningsVisibleRef.current,
-      movesRef.current,
-      movesVisibleRef.current,
-      STRINGS[langRef.current].earningsMarker
-    );
+    applyMarkers(earningsMarkersRef.current, {
+      earningsData: earningsRef.current,
+      earningsVisible: earningsVisibleRef.current,
+      movesData: movesRef.current,
+      movesVisible: movesVisibleRef.current,
+      rows: loadedDataRef.current,
+      crossVisible: crossVisibleRef.current,
+      str: STRINGS[langRef.current],
+    });
+  }
+
+  function setMaVisible(visible) {
+    Object.keys(seriesMapRef.current)
+      .filter((key) => key.startsWith('ma:'))
+      .forEach((key) => seriesMapRef.current[key].applyOptions({ visible }));
+  }
+
+  function handleMaConfigChange(config) {
+    setMaConfig(config);
+    maConfigRef.current = config;
+    saveMaConfig(config);
+    const chart = chartRef.current;
+    if (chart) syncMaSeries(chart, seriesMapRef.current, config, visibility.ma, loadedDataRef.current);
   }
 
   function clearSelection() {
@@ -935,6 +1234,7 @@ function App() {
         loadedData = [...older, ...loadedData];
         loadedDataRef.current = loadedData;
         renderAllSeries(seriesMapRef.current, loadedData);
+        refreshMarkers();
 
         if (previousRange) {
           chart.timeScale().setVisibleLogicalRange({
@@ -987,6 +1287,7 @@ function App() {
           const visible = group ? visibility[group.id] : true;
           seriesMapRef.current[key] = chart.addSeries(type, { ...options, visible }, 0);
         });
+        syncMaSeries(chart, seriesMapRef.current, maConfigRef.current, visibility.ma, []);
         chart.panes()[0].setStretchFactor(MAIN_PANE_STRETCH);
         applyChartTheme(chart, seriesMapRef.current);
 
@@ -1002,6 +1303,7 @@ function App() {
         earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
         earningsVisibleRef.current = visibility.earnings;
         movesVisibleRef.current = visibility.moves;
+        crossVisibleRef.current = visibility.maCross;
         refreshMarkers();
         const lastIdx = loadedData.length - 1;
         const dailyChange = new DailyChangePrimitive();
@@ -1323,6 +1625,65 @@ function App() {
             flex-shrink: 0;
             cursor: pointer;
             accent-color: var(--accent);
+          }
+          .stc-ma-editor {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin: 6px 2px 0;
+            padding: 8px;
+            border: 1px solid var(--panel-border);
+            border-radius: 3px;
+          }
+          .stc-ma-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          }
+          .stc-ma-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            flex-shrink: 0;
+          }
+          .stc-select {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-size: 12.5px;
+            border: 1px solid var(--btn-border);
+            background: var(--input-bg);
+            color: var(--text-strong);
+            border-radius: 3px;
+            padding: 4px 6px;
+            flex: 1;
+            min-width: 0;
+          }
+          .stc-ma-remove, .stc-ma-add {
+            font-family: inherit;
+            border: 1px solid var(--btn-border);
+            background: var(--btn-bg);
+            color: var(--text);
+            border-radius: 3px;
+            cursor: pointer;
+          }
+          .stc-ma-remove {
+            width: 26px;
+            height: 26px;
+            font-size: 15px;
+            line-height: 1;
+            flex-shrink: 0;
+          }
+          .stc-ma-remove:disabled {
+            opacity: 0.4;
+            cursor: default;
+          }
+          .stc-ma-add {
+            font-size: 12.5px;
+            padding: 5px 8px;
+            margin-top: 2px;
+          }
+          .stc-ma-remove:not(:disabled):hover, .stc-ma-add:hover {
+            background: var(--btn-bg-hover);
+            color: var(--text-strong);
           }
           .stc-kbd {
             position: absolute;
@@ -1820,6 +2181,9 @@ function App() {
                       </label>
                     ))}
                   </div>
+                  {section.titleKey === 'sectionIndicators' && visibility.ma && (
+                    <MaEditor config={maConfig} onChange={handleMaConfigChange} />
+                  )}
                 </div>
               ))}
             </div>

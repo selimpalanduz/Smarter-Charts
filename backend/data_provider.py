@@ -10,6 +10,7 @@ import price_cache
 
 BUFFER_DAYS = 90
 PE_YOY_BUFFER_DAYS = 400
+MA_PERIODS = (5, 9, 12, 20, 21, 50, 100, 200)
 
 ISYATIRIM_MALITABLO_URL = (
     "https://www.isyatirim.com.tr/_Layouts/15/IsYatirim.Website/Common/Data.aspx/MaliTablo"
@@ -222,6 +223,9 @@ def get_price_history(symbol: str, start: str, end: str) -> list[dict]:
         ttm_eps = eps_future.result()
 
     df = bp.add_indicators(df)
+    for period in MA_PERIODS:
+        df[f"SMA_{period}"] = df["Close"].rolling(period).mean()
+        df[f"EMA_{period}"] = df["Close"].ewm(span=period, adjust=False).mean()
     df = df.reset_index()
     df.columns = [str(c) for c in df.columns]
 
