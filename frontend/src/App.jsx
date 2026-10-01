@@ -17,6 +17,8 @@ import {
 import VolumeScanWidget from './VolumeScanWidget.jsx';
 import PatternSearchWidget from './PatternSearchWidget.jsx';
 import MoveReasonsWidget from './MoveReasonsWidget.jsx';
+import AnchorsWidget from './AnchorsWidget.jsx';
+import AnchorScanWidget from './AnchorScanWidget.jsx';
 import { API_BASE } from './config.js';
 import { STRINGS, LangContext, useT } from './i18n.js';
 import { THEME, setPalette, colors } from './theme.js';
@@ -276,6 +278,7 @@ const OVERLAY_GROUPS = [
   { id: 'srZones', keys: [] },
   { id: 'earnings', keys: [] },
   { id: 'moves', keys: [] },
+  { id: 'anchors', keys: [] },
 ];
 
 // Groups that get their OWN dedicated pane. This array's order is the fixed
@@ -350,7 +353,7 @@ const TOGGLE_GROUPS = [
   ...DEDICATED_GROUPS.flatMap((g) => (g.id === 'rsi' ? [{ id: 'rsi' }, { id: 'rsiDiv' }] : [{ id: g.id }])),
 ];
 
-const OTHER_TOOL_IDS = ['srZones', 'earnings', 'moves'];
+const OTHER_TOOL_IDS = ['srZones', 'earnings', 'moves', 'anchors'];
 const PANEL_SECTIONS = [
   { titleKey: 'sectionIndicators', groups: TOGGLE_GROUPS.filter((g) => !OTHER_TOOL_IDS.includes(g.id)) },
   { titleKey: 'sectionOther', groups: TOGGLE_GROUPS.filter((g) => OTHER_TOOL_IDS.includes(g.id)) },
@@ -375,6 +378,7 @@ const SIDEBAR_TABS = [
   { id: 'scan', labelKey: 'tabScan' },
   { id: 'patterns', labelKey: 'tabPatterns' },
   { id: 'moves', labelKey: 'tabMoves' },
+  { id: 'psych', labelKey: 'tabPsych' },
 ];
 function patternHighlight() {
   return { fillColor: colors().accentSoft, borderColor: colors().accent };
@@ -413,6 +417,13 @@ async function fetchPatterns(symbol, start, end) {
 
 async function fetchSrZones(symbol) {
   const url = `${API_BASE}/api/sr/${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchAnchors(symbol) {
+  const url = `${API_BASE}/api/anchors/${symbol}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -647,6 +658,23 @@ function applySrZones(series, primitivesRef, srData, visible) {
   primitivesRef.current = primitives;
 }
 
+// Redraws the psychological level lines: dashed for round numbers, dotted for the 52-week high/low.
+// Psikolojik seviye çizgilerini yeniden çizer: yuvarlak sayılar kesikli, 52 haftalık zirve/dip noktalı.
+function applyAnchors(series, linesRef, data, visible, str) {
+  if (!series) return;
+  linesRef.current.forEach((line) => series.removePriceLine(line));
+  linesRef.current = [];
+
+  if (!visible || !data?.price) return;
+
+  const lines = [
+    ...data.round.map((r) => ({ price: r.level, color: colors().accent, lineStyle: 2, title: String(r.level) })),
+    { price: data.high52.level, color: colors().down, lineStyle: 1, title: str.high52Short },
+    { price: data.low52.level, color: colors().up, lineStyle: 1, title: str.low52Short },
+  ];
+  linesRef.current = lines.map((line) => series.createPriceLine({ ...line, lineWidth: 1, axisLabelVisible: true }));
+}
+
 // Populates every currently-existing series (pane 0 + whichever dedicated
 // panes are currently mounted) with fresh data. Safe to call any time —
 // series that don't currently exist are simply skipped (`?.`).
@@ -787,6 +815,10 @@ function App() {
 
   const srZonesRef = useRef(null);
   const srPrimitivesRef = useRef([]);
+  const anchorsRef = useRef(null);
+  const anchorLinesRef = useRef([]);
+  const anchorsVisibleRef = useRef(false);
+  const [anchorsData, setAnchorsData] = useState(null);
 
   const earningsRef = useRef(null);
   const earningsMarkersRef = useRef(null);
@@ -859,6 +891,12 @@ function App() {
       return;
     }
 
+    if (groupId === 'anchors') {
+      anchorsVisibleRef.current = nextVisible;
+      applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, nextVisible, STRINGS[langRef.current]);
+      return;
+    }
+
     if (groupId === 'ma') {
       setMaVisible(nextVisible);
       return;
@@ -923,6 +961,8 @@ function App() {
       });
     });
     applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, target);
+    anchorsVisibleRef.current = target;
+    applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, target, STRINGS[langRef.current]);
     setMaVisible(target);
     earningsVisibleRef.current = target;
     movesVisibleRef.current = target;
@@ -1303,6 +1343,7 @@ function App() {
         earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
         earningsVisibleRef.current = visibility.earnings;
         movesVisibleRef.current = visibility.moves;
+        anchorsVisibleRef.current = visibility.anchors;
         crossVisibleRef.current = visibility.maCross;
         refreshMarkers();
         const lastIdx = loadedData.length - 1;
@@ -1328,6 +1369,14 @@ function App() {
             if (cancelled) return;
             movesRef.current = movesData;
             refreshMarkers();
+          })
+          .catch(() => {});
+        fetchAnchors(symbol)
+          .then((data) => {
+            if (cancelled) return;
+            anchorsRef.current = data;
+            setAnchorsData(data);
+            applyAnchors(seriesMapRef.current.candle, anchorLinesRef, data, anchorsVisibleRef.current, STRINGS[langRef.current]);
           })
           .catch(() => {});
         chart.subscribeCrosshairMove(handleCrosshairMove);
@@ -1388,6 +1437,9 @@ function App() {
       loadedDataRef.current = [];
       drawingsRef.current = [];
       srPrimitivesRef.current = [];
+      anchorsRef.current = null;
+      anchorLinesRef.current = [];
+      setAnchorsData(null);
       earningsRef.current = null;
       earningsMarkersRef.current = null;
       setEarningsTip(null);
@@ -1417,6 +1469,7 @@ function App() {
     renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     refreshMarkers();
     applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
+    applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, visibility.anchors, STRINGS[langRef.current]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [darkMode]);
 
@@ -1428,6 +1481,7 @@ function App() {
     chart.applyOptions({ localization: { locale: STRINGS[lang].locale } });
     applySeriesTitles(seriesMapRef.current, STRINGS[lang].seriesTitles);
     refreshMarkers();
+    applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, visibility.anchors, STRINGS[lang]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang]);
 
@@ -2198,6 +2252,12 @@ function App() {
 
             <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'moves'}>
               <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />
+            </div>
+
+            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'psych'}>
+              <AnchorsWidget data={anchorsData} />
+              <div style={{ borderTop: '1px solid var(--panel-border)', margin: '16px 0' }} />
+              <AnchorScanWidget onSelectSymbol={handleSelectScanSymbol} />
             </div>
           </aside>
         </div>

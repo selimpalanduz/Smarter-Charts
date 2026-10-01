@@ -9,6 +9,8 @@ from earnings import get_earnings
 from pattern_search import find_similar
 from moves import get_moves
 from kap import get_text
+from anchors import get_anchors
+import anchor_scanner
 
 app = FastAPI()
 
@@ -32,6 +34,14 @@ def get_price(symbol: str, start: str, end: str):
 def get_volume_scan(refresh: bool = False):
     try:
         return get_scan(force_refresh=refresh)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/scan/anchors")
+def get_anchor_scan(start: bool = False):
+    try:
+        return anchor_scanner.get_scan(start=start)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
@@ -66,6 +76,14 @@ def get_similar_patterns(symbol: str, start: str, end: str):
 def get_sharp_moves(symbol: str):
     try:
         return get_moves(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/anchors/{symbol}")
+def get_anchor_levels(symbol: str):
+    try:
+        return get_anchors(symbol)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
