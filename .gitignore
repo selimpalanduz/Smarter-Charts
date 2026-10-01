@@ -9,3 +9,4 @@ backend/data/prices.db*
 backend/data/kap.db*
 fikirler.txt
 backend/data/anchor_scan.json
+backend/data/symbols.json

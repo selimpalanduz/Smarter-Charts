@@ -14,6 +14,7 @@ import {
   SRZonePrimitive,
   DailyChangePrimitive,
 } from './drawingTools.js';
+import SymbolPicker from './SymbolPicker.jsx';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
 import PatternSearchWidget from './PatternSearchWidget.jsx';
 import MoveReasonsWidget from './MoveReasonsWidget.jsx';
@@ -834,7 +835,6 @@ function App() {
   const [earningsNext, setEarningsNext] = useState(null);
 
   const [symbol, setSymbol] = useState('THYAO');
-  const [symbolInput, setSymbolInput] = useState('THYAO');
   const symbolInputRef = useRef(null);
 
   const [activeTool, setActiveTool] = useState(null);
@@ -867,15 +867,8 @@ function App() {
     setSidebarOpen(true);
   }
 
-  function handleSymbolSubmit(e) {
-    e.preventDefault();
-    const trimmed = symbolInput.trim().toUpperCase();
-    if (trimmed) setSymbol(trimmed);
-  }
-
   function handleSelectScanSymbol(sym) {
     setSymbol(sym);
-    setSymbolInput(sym);
   }
 
   function handleToggle(groupId) {
@@ -2016,22 +2009,7 @@ function App() {
           </div>
           <div className="stc-vrule" />
 
-          <form onSubmit={handleSymbolSubmit} style={{ display: 'flex', gap: '6px' }}>
-            <div style={{ position: 'relative' }}>
-              <input
-                ref={symbolInputRef}
-                className="stc-input"
-                value={symbolInput}
-                onChange={(e) => setSymbolInput(e.target.value)}
-                placeholder={str.symbolPlaceholder}
-                aria-label={str.symbolPlaceholder}
-                aria-keyshortcuts="/"
-                style={{ width: '118px', paddingRight: '26px' }}
-              />
-              <kbd className="stc-kbd">/</kbd>
-            </div>
-            <button type="submit" className="stc-btn stc-btn-primary">{str.load}</button>
-          </form>
+          <SymbolPicker symbol={symbol} onSelect={setSymbol} inputRef={symbolInputRef} />
 
           {quote && (
             <div className="stc-quote">

@@ -10,6 +10,7 @@ from pattern_search import find_similar
 from moves import get_moves
 from kap import get_text
 from anchors import get_anchors
+from symbols import get_symbols
 import anchor_scanner
 
 app = FastAPI()
@@ -26,6 +27,14 @@ app.add_middleware(
 def get_price(symbol: str, start: str, end: str):
     try:
         return get_price_history(symbol, start, end)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/symbols")
+def list_symbols():
+    try:
+        return get_symbols()
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
