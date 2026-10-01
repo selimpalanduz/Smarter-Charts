@@ -149,9 +149,13 @@ def maybe_refresh_recent(symbol: str, requested_end: str) -> None:
     """
     If the requested range ends close to today, refreshes the last few days,
     but tries at most once every REFRESH_CHECK_INTERVAL seconds per symbol.
+    If the cache is older than the refresh window, fetches from its last date
+    so no gap is left.
 
     İstenen aralığın sonu bugüne yakınsa, son birkaç günü tazeler — ama
     aynı sembol için en fazla REFRESH_CHECK_INTERVAL saniyede bir dener.
+    Önbellek tazeleme penceresinden eskiyse, boşluk kalmasın diye son
+    tarihinden itibaren çeker.
     """
     end_date = datetime.fromisoformat(requested_end).date()
     today = datetime.now().date()
@@ -166,6 +170,9 @@ def maybe_refresh_recent(symbol: str, requested_end: str) -> None:
     refresh_start = today - timedelta(days=REFRESH_WINDOW_DAYS)
     conn = _get_connection()
     try:
+        last = conn.execute("SELECT MAX(date) FROM prices WHERE symbol = ?", (symbol,)).fetchone()[0]
+        if last:
+            refresh_start = min(refresh_start, datetime.fromisoformat(last[:10]).date())
         df = bp.Ticker(symbol).history(start=refresh_start.strftime("%Y-%m-%d"))
         _upsert(conn, symbol, df)
     except Exception:
