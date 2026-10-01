@@ -381,6 +381,12 @@ const SIDEBAR_TABS = [
   { id: 'moves', labelKey: 'tabMoves' },
   { id: 'psych', labelKey: 'tabPsych' },
 ];
+const LOADING_BARS = [0, 0.09, 0.18, 0.27, 0.36, 0.45, 0.54, 0.63];
+
+// A cold symbol pulls its whole history upstream, which can run past a minute.
+// Cache'te olmayan sembol tüm geçmişini yukarıdan çekiyor, bu bir dakikayı aşabiliyor.
+const SLOW_LOAD_MS = 4000;
+
 function patternHighlight() {
   return { fillColor: colors().accentSoft, borderColor: colors().accent };
 }
@@ -801,6 +807,8 @@ function App() {
   const seriesMapRef = useRef({});
   const loadedDataRef = useRef([]);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingSlow, setLoadingSlow] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState('indicators');
   const [quote, setQuote] = useState(null);
@@ -1236,6 +1244,15 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!loading) {
+      setLoadingSlow(false);
+      return undefined;
+    }
+    const id = setTimeout(() => setLoadingSlow(true), SLOW_LOAD_MS);
+    return () => clearTimeout(id);
+  }, [loading]);
+
+  useEffect(() => {
     let chart;
     let cancelled = false;
 
@@ -1285,6 +1302,7 @@ function App() {
     async function init() {
       try {
         setError(null);
+        setLoading(true);
         const end = new Date();
         const start = new Date();
         start.setMonth(start.getMonth() - CHUNK_MONTHS);
@@ -1414,6 +1432,8 @@ function App() {
         chart._cleanupResizeObserver = () => resizeObserver.disconnect();
       } catch (err) {
         if (!cancelled) setError(err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -1977,6 +1997,57 @@ function App() {
           .stc-row:hover {
             background: var(--btn-bg-hover);
           }
+          .stc-loading {
+            position: absolute;
+            inset: 0;
+            z-index: 18;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            background: var(--page-bg);
+            pointer-events: none;
+          }
+          .stc-loading-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 5px;
+            height: 48px;
+          }
+          .stc-loading-bars i {
+            display: block;
+            width: 5px;
+            border-radius: 1px;
+            background: var(--text-dim);
+            animation: stc-bar 1.1s ease-in-out infinite;
+          }
+          @keyframes stc-bar {
+            0%, 100% { height: 12px; opacity: 0.25; }
+            50% { height: 46px; opacity: 0.7; }
+          }
+          .stc-loading-hint {
+            margin: 0;
+            max-width: 320px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-dim);
+            animation: stc-fade 0.4s ease-out;
+          }
+          @keyframes stc-fade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .stc-loading-bars i {
+              animation: none;
+              height: 28px;
+              opacity: 0.4;
+            }
+            .stc-loading-hint {
+              animation: none;
+            }
+          }
           .stc-error {
             position: absolute;
             top: 12px;
@@ -2118,6 +2189,20 @@ function App() {
               ref={chartContainerRef}
               style={{ position: 'absolute', inset: 0, cursor: activeTool ? 'crosshair' : 'default' }}
             />
+
+            {loading && !error && (
+              <div className="stc-loading" role="status" aria-live="polite">
+                <div className="stc-loading-bars" aria-hidden="true">
+                  {LOADING_BARS.map((delay) => (
+                    <i key={delay} style={{ animationDelay: `${delay}s` }} />
+                  ))}
+                </div>
+                <p className="stc-mono" style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-dim)' }}>
+                  {str.loadingSymbol(symbol)}
+                </p>
+                {loadingSlow && <p className="stc-loading-hint">{str.loadingSlowHint}</p>}
+              </div>
+            )}
 
             {error && (
               <p className="stc-error">
