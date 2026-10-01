@@ -46,7 +46,7 @@ def _fetch_names() -> dict[str, dict]:
     return info
 
 
-def _build() -> list[dict]:
+def _build() -> tuple[list[dict], bool]:
     tickers = _load_tickers()
     try:
         info = _fetch_names()
@@ -64,7 +64,7 @@ def _build() -> list[dict]:
     # Most traded first, so the list reads usefully before anything is typed.
     # En çok işlem görenler başta olsun ki liste bir şey yazılmadan da işe yarasın.
     out.sort(key=lambda r: (r["rank"], r["symbol"]))
-    return [{"symbol": r["symbol"], "name": r["name"]} for r in out]
+    return [{"symbol": r["symbol"], "name": r["name"]} for r in out], bool(info)
 
 
 def _read_cache() -> tuple[float, list[dict]] | None:
@@ -96,7 +96,14 @@ def get_symbols() -> list[dict]:
         _memory = cached
         return cached[1]
 
-    symbols = _build()
+    symbols, named = _build()
+    if not named:
+        # A nameless list has not earned a week in the cache, and an expired one
+        # still carries the names, so it is the better answer until the next try.
+        # Adsız liste bir haftalık cache'i hak etmiyor; süresi geçmiş olan adları
+        # hâlâ tuttuğu için bir sonraki denemeye kadar daha iyi cevap o.
+        return cached[1] if cached else symbols
+
     _memory = (now, symbols)
     _write_cache(symbols)
     return symbols
