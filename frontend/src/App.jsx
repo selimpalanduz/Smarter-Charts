@@ -2225,7 +2225,7 @@ function App() {
                   <div className="stc-section-title">{str[section.titleKey]}</div>
                   <div className="stc-checkbox-grid">
                     {section.groups.map((group) => (
-                      <label key={group.id} className="stc-checkbox-row">
+                      <label key={group.id} className="stc-checkbox-row" title={str.groupHints[group.id]}>
                         <input
                           type="checkbox"
                           checked={visibility[group.id]}

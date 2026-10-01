@@ -1,20 +1,29 @@
 """Support/resistance zone detection.
 
-The logic is taken from the SupportResistanceDetector project: pivot points
-(scipy find_peaks) are combined with price density sampling, and prices
-close to each other (within 0.4%) are grouped into a single "zone".
-The difference from the original: data comes from this project's existing
-SQLite price cache (price_cache) instead of yfinance.
+Only clear swing highs/lows count: a pivot must stand out by at least
+PIVOT_PROMINENCE_ATR times the average true range. Pivots within ZONE_SPAN_ATR
+of each other form a zone; a zone is kept if it was touched at least twice,
+comes from one major or recent swing, or is the window high/low. Stronger zones
+suppress weaker ones within MIN_SEPARATION_ATR, and only the nearest few on each
+side are returned so the chart stays readable.
+
+Out-of-sample tests on BIST daily data showed no horizontal level method holds
+price more often than random levels, so these zones are a visual reference only.
 
 Destek/direnç zone tespiti.
 
-Mantık SupportResistanceDetector projesinden alındı: pivot noktaları
-(scipy find_peaks) ile fiyat yoğunluğu örneklemesini birleştirip,
-birbirine yakın (%0.4 içinde) fiyatları tek bir "zone"da topluyoruz.
-Orijinalinden farkı: veriyi yfinance yerine bu projenin zaten sahip
-olduğu SQLite fiyat önbelleğinden (price_cache) alıyoruz.
+Sadece belirgin dönüş noktaları sayılır: bir pivot ortalama gerçek aralığın
+(ATR) en az PIVOT_PROMINENCE_ATR katı kadar öne çıkmalı. Birbirine ZONE_SPAN_ATR
+içinde olan pivotlar bir zone oluşturur; zone en az iki kez test edildiyse,
+tek bir büyük ya da yakın tarihli dönüşten geliyorsa veya pencerenin zirve/dibiyse tutulur. Güçlü
+zone'lar MIN_SEPARATION_ATR içindeki zayıfları bastırır ve grafik okunur kalsın diye
+her yönde sadece en yakın birkaç zone döner.
+
+BIST günlük verisindeki örneklem dışı testlerde hiçbir yatay seviye yöntemi
+fiyatı rastgele seviyelerden daha sık tutmadı; bu zone'lar sadece görsel referanstır.
 """
 
+import math
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -23,96 +32,122 @@ from scipy.signal import find_peaks
 
 import price_cache
 
-LOOKBACK_DAYS = 365
-# Prices closer than this percentage fall into the same zone.
-# Bu yüzdeden yakın fiyatlar aynı zone'a girer.
-CLUSTER_GAP_PCT = 0.004
-EXTREME_TOLERANCE_PCT = 0.005
+LOOKBACK_DAYS = 730
+ATR_PERIOD = 14
 PIVOT_DISTANCE = 5
-MAX_SUPPORTS = 8
+PIVOT_PROMINENCE_ATR = 1.0
+# A single swing this prominent, or this recent, is a level on its own.
+# Bu kadar belirgin ya da yakın tarihli tek bir dönüş tek başına seviyedir.
+MAJOR_PROMINENCE_ATR = 4.0
+RECENT_BARS = 60
+ZONE_SPAN_ATR = 1.0
+MIN_SEPARATION_ATR = 1.5
+MIN_HALF_WIDTH_ATR = 0.25
+MIN_TOUCHES = 2
+MAX_PER_SIDE = 3
+
+
+def _atr_pct(df: pd.DataFrame) -> float:
+    """
+    Median ATR as a fraction of price. Everything is measured in log price so a
+    stock that multiplied over the window is judged the same at every price level.
+
+    Fiyatın oranı olarak medyan ATR. Her şey log fiyatta ölçülür; böylece pencere
+    boyunca katlanan bir hisse her fiyat seviyesinde aynı ölçüyle değerlendirilir.
+    """
+    prev_close = df["Close"].shift(1)
+    true_range = pd.concat(
+        [df["High"] - df["Low"], (df["High"] - prev_close).abs(), (df["Low"] - prev_close).abs()], axis=1
+    ).max(axis=1)
+    return float((true_range.rolling(ATR_PERIOD).mean() / df["Close"]).median())
+
+
+def _pivots(log_high: np.ndarray, log_low: np.ndarray, atr: float) -> list[tuple[float, float, int]]:
+    """
+    Swing highs and lows as (log price, prominence in ATR, bar index), plus the window extremes.
+
+    Dönüş tepeleri ve dipleri (log fiyat, ATR cinsinden belirginlik, bar indeksi) olarak; artı pencerenin uç noktaları.
+    """
+    min_prominence = atr * PIVOT_PROMINENCE_ATR
+    hi_idx, hi_props = find_peaks(log_high, distance=PIVOT_DISTANCE, prominence=min_prominence)
+    lo_idx, lo_props = find_peaks(-log_low, distance=PIVOT_DISTANCE, prominence=min_prominence)
+    pivots = [(log_high[i], p / atr, int(i)) for i, p in zip(hi_idx, hi_props["prominences"])]
+    pivots += [(log_low[i], p / atr, int(i)) for i, p in zip(lo_idx, lo_props["prominences"])]
+
+    # find_peaks skips the edges, where the extremes may sit.
+    # find_peaks kenarları atlıyor, uç noktalar orada olabilir.
+    for values in (log_high, -log_low):
+        i = int(values.argmax())
+        if not any(idx == i for _, _, idx in pivots):
+            pivots.append((abs(values[i]), MAJOR_PROMINENCE_ATR, i))
+    return sorted(pivots)
+
+
+def _cluster(pivots: list[tuple[float, float, int]], span: float) -> list[list[tuple[float, float, int]]]:
+    groups: list[list[tuple[float, float, int]]] = []
+    for pivot in pivots:
+        if groups and pivot[0] - groups[-1][0][0] <= span:
+            groups[-1].append(pivot)
+        else:
+            groups.append([pivot])
+    return groups
 
 
 def find_sr_levels(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
-    if df is None or df.empty:
+    if df is None or len(df) < ATR_PERIOD * 2:
         return [], []
 
-    current_price = float(df["Close"].iloc[-1])
-    std_dev = float(df["Close"].std())
-    if std_dev == 0 or np.isnan(std_dev):
+    atr = _atr_pct(df)
+    if not atr or np.isnan(atr):
         return [], []
 
-    prominence = std_dev * 0.05
-    res_idx, _ = find_peaks(df["High"].values, distance=PIVOT_DISTANCE, prominence=prominence)
-    sup_idx, _ = find_peaks(-df["Low"].values, distance=PIVOT_DISTANCE, prominence=prominence)
+    log_high = np.log(df["High"].to_numpy(dtype=float))
+    log_low = np.log(df["Low"].to_numpy(dtype=float))
+    current = math.log(float(df["Close"].iloc[-1]))
+    extremes = {log_high.max(), log_low.min()}
 
-    recent = df.tail(30)
-    sampled_means = df["Close"].rolling(window=3).mean().dropna()
-    sample_n = max(1, int(len(sampled_means) * 0.2))
-    sampled_means = sampled_means.sample(n=sample_n, random_state=0) if len(sampled_means) else sampled_means
-
-    local_max, local_min = float(df["High"].max()), float(df["Low"].min())
-
-    raw_candidates = (
-        df["High"].iloc[res_idx].tolist()
-        + df["Low"].iloc[sup_idx].tolist()
-        + recent["Close"].tolist() * 2
-        + sampled_means.tolist()
-        + [local_max] * 5
-        + [local_min] * 5
-    )
-
-    def _is_extreme(group: list[float]) -> bool:
-        return any(abs(x - local_max) / local_max < EXTREME_TOLERANCE_PCT for x in group) or any(
-            abs(x - local_min) / local_min < EXTREME_TOLERANCE_PCT for x in group
-        )
-
+    recent_start = len(df) - RECENT_BARS
     zones = []
-    sorted_candidates = sorted(raw_candidates)
-    if sorted_candidates:
-        current_group = [sorted_candidates[0]]
-        for price in sorted_candidates[1:]:
-            if (price - current_group[-1]) / current_group[-1] < CLUSTER_GAP_PCT:
-                current_group.append(price)
-            else:
-                if len(current_group) >= 3 or _is_extreme(current_group):
-                    zones.append(
-                        {
-                            "min": float(min(current_group)),
-                            "max": float(max(current_group)),
-                            "mean": float(np.mean(current_group)),
-                            "touches": len(current_group),
-                        }
-                    )
-                current_group = [price]
-
-        if len(current_group) >= 3 or _is_extreme(current_group):
-            zones.append(
-                {
-                    "min": float(min(current_group)),
-                    "max": float(max(current_group)),
-                    "mean": float(np.mean(current_group)),
-                    "touches": len(current_group),
-                }
-            )
-
-    ath_already_in = any(abs(z["mean"] - local_max) / local_max < 0.01 for z in zones)
-    if not ath_already_in:
+    for group in _cluster(_pivots(log_high, log_low, atr), atr * ZONE_SPAN_ATR):
+        levels = [p for p, _, _ in group]
+        is_extreme = any(p in extremes for p in levels)
+        is_major = max(s for _, s, _ in group) >= MAJOR_PROMINENCE_ATR
+        is_recent = max(i for _, _, i in group) >= recent_start
+        if len(group) < MIN_TOUCHES and not (is_major or is_recent or is_extreme):
+            continue
+        mean = float(np.mean(levels))
+        half = atr * MIN_HALF_WIDTH_ATR
         zones.append(
             {
-                "min": float(local_max * 0.995),
-                "max": float(local_max * 1.005),
-                "mean": float(local_max),
-                "touches": 1,
+                "lo": min(min(levels), mean - half),
+                "hi": max(max(levels), mean + half),
+                "mean": mean,
+                "touches": len(group),
+                "score": sum(min(s, MAJOR_PROMINENCE_ATR) for _, s, _ in group),
             }
         )
 
-    supports = [z for z in zones if z["mean"] < current_price]
-    resistances = [z for z in zones if z["mean"] > current_price]
+    # Strongest first; weaker zones too close to a kept one are dropped.
+    # Önce en güçlüler; tutulan birine çok yakın zayıf zone'lar atılır.
+    kept: list[dict] = []
+    for z in sorted(zones, key=lambda z: z["score"], reverse=True):
+        if all(abs(z["mean"] - k["mean"]) >= atr * MIN_SEPARATION_ATR for k in kept):
+            kept.append(z)
 
-    sorted_res = sorted(resistances, key=lambda z: z["mean"])
-    sorted_sup = sorted(supports, key=lambda z: z["mean"], reverse=True)[:MAX_SUPPORTS]
+    def nearest(side: list[dict]) -> list[dict]:
+        return sorted(side, key=lambda z: abs(z["mean"] - current))[:MAX_PER_SIDE]
 
-    return sorted_res, sorted_sup
+    def to_price(z: dict) -> dict:
+        return {
+            "min": round(math.exp(z["lo"]), 4),
+            "max": round(math.exp(z["hi"]), 4),
+            "mean": round(math.exp(z["mean"]), 4),
+            "touches": z["touches"],
+        }
+
+    resistances = sorted(nearest([z for z in kept if z["mean"] > current]), key=lambda z: z["mean"])
+    supports = sorted(nearest([z for z in kept if z["mean"] <= current]), key=lambda z: z["mean"], reverse=True)
+    return [to_price(z) for z in resistances], [to_price(z) for z in supports]
 
 
 def get_sr_zones(symbol: str) -> dict:

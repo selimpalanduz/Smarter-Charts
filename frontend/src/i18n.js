@@ -59,6 +59,9 @@ export const STRINGS = {
       obv: 'OBV',
       pe: 'P/E',
     },
+    groupHints: {
+      srZones: 'Nearest clear swing highs/lows (Nx = times tested). A visual reference: in backtests these levels did not hold price more often than random levels.',
+    },
     drawingTools: {
       horizontal: 'Horizontal Line',
       trendline: 'Trend Line',
@@ -233,6 +236,9 @@ export const STRINGS = {
       atr: 'ATR',
       obv: 'OBV',
       pe: 'F/K',
+    },
+    groupHints: {
+      srZones: 'En yakın belirgin tepe/dipler (Nx = test sayısı). Görsel referanstır: geriye dönük testlerde bu seviyeler fiyatı rastgele seviyelerden daha sık tutmadı.',
     },
     drawingTools: {
       horizontal: 'Yatay Çizgi',
