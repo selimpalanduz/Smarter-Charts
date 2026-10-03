@@ -44,7 +44,7 @@ ZONE_SPAN_ATR = 1.0
 MIN_SEPARATION_ATR = 1.5
 MIN_HALF_WIDTH_ATR = 0.25
 MIN_TOUCHES = 2
-MAX_PER_SIDE = 3
+MAX_PER_SIDE = 4
 
 
 def _atr_pct(df: pd.DataFrame) -> float:
@@ -123,6 +123,7 @@ def find_sr_levels(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
                 "hi": max(max(levels), mean + half),
                 "mean": mean,
                 "touches": len(group),
+                "extreme": is_extreme,
                 "score": sum(min(s, MAJOR_PROMINENCE_ATR) for _, s, _ in group),
             }
         )
@@ -134,8 +135,16 @@ def find_sr_levels(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
         if all(abs(z["mean"] - k["mean"]) >= atr * MIN_SEPARATION_ATR for k in kept):
             kept.append(z)
 
+    # The period's extreme zone is exempt from the distance cut: it is the high
+    # or low the whole window is measured against, however far price has moved.
+    # Dönemin uç zone'u mesafe elemesinden muaf: fiyat ne kadar uzaklaşmış olursa
+    # olsun, tüm pencerenin ölçüldüğü zirve ya da dip orası.
     def nearest(side: list[dict]) -> list[dict]:
-        return sorted(side, key=lambda z: abs(z["mean"] - current))[:MAX_PER_SIDE]
+        picked = sorted(side, key=lambda z: abs(z["mean"] - current))[:MAX_PER_SIDE]
+        extreme = next((z for z in side if z["extreme"]), None)
+        if extreme is not None and not any(z is extreme for z in picked):
+            picked.append(extreme)
+        return picked
 
     def to_price(z: dict) -> dict:
         return {
