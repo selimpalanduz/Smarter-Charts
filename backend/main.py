@@ -12,6 +12,7 @@ from kap import get_text
 from anchors import get_anchors
 from symbols import get_symbols
 import anchor_scanner
+import cache_warmer
 
 app = FastAPI()
 
@@ -22,6 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Price-Stale", "X-History-Pending"],
 )
+
+# Off unless WARM_CACHE is set; see cache_warmer.
+# WARM_CACHE verilmedikçe kapalı; bkz. cache_warmer.
+cache_warmer.start()
 
 
 @app.get("/api/price/{symbol}")
