@@ -16,6 +16,7 @@ en fazla birkaç dakikada bir, son birkaç günü tazeliyoruz.
 """
 
 import sqlite3
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -30,8 +31,15 @@ REFRESH_WINDOW_DAYS = 14
 # seconds
 # saniye
 REFRESH_CHECK_INTERVAL = 300
+# How far behind the cache may be and still be worth showing right away.
+# Covers a weekend: on Monday the newest candle is Friday's.
+# Önbellek en fazla bu kadar geride olup da hemen gösterilmeye değer sayılır.
+# Hafta sonunu kapsar: pazartesi en yeni mum cumanın.
+SERVE_STALE_MAX_DAYS = 3
 
 _last_refresh_check: dict[str, float] = {}
+_refreshing: set[str] = set()
+_refresh_guard = threading.Lock()
 
 
 def _get_connection() -> sqlite3.Connection:
@@ -145,34 +153,30 @@ def ensure_cached(symbol: str) -> None:
         conn.close()
 
 
-def maybe_refresh_recent(symbol: str, requested_end: str) -> None:
-    """
-    If the requested range ends close to today, refreshes the last few days,
-    but tries at most once every REFRESH_CHECK_INTERVAL seconds per symbol.
-    If the cache is older than the refresh window, fetches from its last date
-    so no gap is left.
-
-    İstenen aralığın sonu bugüne yakınsa, son birkaç günü tazeler — ama
-    aynı sembol için en fazla REFRESH_CHECK_INTERVAL saniyede bir dener.
-    Önbellek tazeleme penceresinden eskiyse, boşluk kalmasın diye son
-    tarihinden itibaren çeker.
-    """
-    end_date = datetime.fromisoformat(requested_end).date()
-    today = datetime.now().date()
-    if (today - end_date).days > 2:
-        return
-
-    now = time.time()
-    if now - _last_refresh_check.get(symbol, 0) < REFRESH_CHECK_INTERVAL:
-        return
-    _last_refresh_check[symbol] = now
-
-    refresh_start = today - timedelta(days=REFRESH_WINDOW_DAYS)
+def _last_cached_date(symbol: str):
     conn = _get_connection()
     try:
         last = conn.execute("SELECT MAX(date) FROM prices WHERE symbol = ?", (symbol,)).fetchone()[0]
-        if last:
-            refresh_start = min(refresh_start, datetime.fromisoformat(last[:10]).date())
+    finally:
+        conn.close()
+    return datetime.fromisoformat(last[:10]).date() if last else None
+
+
+def _refresh_recent(symbol: str) -> None:
+    """
+    Fetches the last few days. Starts from the cache's last date when that is
+    older than the refresh window, so no gap is left.
+
+    Son birkaç günü çeker. Önbelleğin son tarihi tazeleme penceresinden
+    eskiyse oradan başlar, böylece boşluk kalmaz.
+    """
+    refresh_start = datetime.now().date() - timedelta(days=REFRESH_WINDOW_DAYS)
+    last = _last_cached_date(symbol)
+    if last:
+        refresh_start = min(refresh_start, last)
+
+    conn = _get_connection()
+    try:
         df = bp.Ticker(symbol).history(start=refresh_start.strftime("%Y-%m-%d"))
         _upsert(conn, symbol, df)
     except Exception:
@@ -181,6 +185,59 @@ def maybe_refresh_recent(symbol: str, requested_end: str) -> None:
         pass
     finally:
         conn.close()
+
+
+def _refresh_in_background(symbol: str) -> None:
+    with _refresh_guard:
+        if symbol in _refreshing:
+            return
+        _refreshing.add(symbol)
+
+    def run():
+        try:
+            _refresh_recent(symbol)
+        finally:
+            with _refresh_guard:
+                _refreshing.discard(symbol)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def maybe_refresh_recent(symbol: str, requested_end: str) -> bool:
+    """
+    If the requested range ends close to today, refreshes the last few days,
+    at most once every REFRESH_CHECK_INTERVAL seconds per symbol.
+
+    When the cache is already within SERVE_STALE_MAX_DAYS of today the refresh
+    runs in a background thread and this returns True, so the caller can serve
+    what is on disk immediately instead of waiting on the provider. Only an
+    empty or genuinely out-of-date cache is refreshed synchronously.
+
+    İstenen aralığın sonu bugüne yakınsa son birkaç günü tazeler — aynı sembol
+    için en fazla REFRESH_CHECK_INTERVAL saniyede bir.
+
+    Önbellek bugünden en fazla SERVE_STALE_MAX_DAYS geride ise tazeleme arka
+    plan thread'inde çalışır ve bu fonksiyon True döner; böylece çağıran,
+    sağlayıcıyı beklemeden diskteki veriyi hemen sunabilir. Yalnızca boş ya da
+    gerçekten eskimiş önbellek senkron tazelenir.
+    """
+    end_date = datetime.fromisoformat(requested_end).date()
+    today = datetime.now().date()
+    if (today - end_date).days > 2:
+        return False
+
+    now = time.time()
+    if now - _last_refresh_check.get(symbol, 0) < REFRESH_CHECK_INTERVAL:
+        return False
+    _last_refresh_check[symbol] = now
+
+    last = _last_cached_date(symbol)
+    if last is None or (today - last).days > SERVE_STALE_MAX_DAYS:
+        _refresh_recent(symbol)
+        return False
+
+    _refresh_in_background(symbol)
+    return True
 
 
 def query_range(symbol: str, start: str, end: str) -> pd.DataFrame:

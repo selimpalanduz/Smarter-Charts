@@ -204,14 +204,21 @@ def attach_pe_yoy(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_price_history(symbol: str, start: str, end: str) -> list[dict]:
+def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bool]:
+    """
+    Returns the rows plus a "stale" flag, true when the last few candles are
+    being refreshed in the background and the caller should ask again shortly.
+
+    Satırları ve bir "stale" bayrağını döner; bayrak true ise son birkaç mum
+    arka planda tazeleniyor ve çağıran kısa süre sonra tekrar sormalı.
+    """
     symbol = symbol.upper()
 
     requested_start = datetime.fromisoformat(start)
     buffered_start = requested_start - timedelta(days=max(BUFFER_DAYS, PE_YOY_BUFFER_DAYS))
 
     price_cache.ensure_cached(symbol)
-    price_cache.maybe_refresh_recent(symbol, end)
+    stale = price_cache.maybe_refresh_recent(symbol, end)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         price_future = executor.submit(
@@ -242,4 +249,4 @@ def get_price_history(symbol: str, start: str, end: str) -> list[dict]:
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.astype(object).where(pd.notnull(df), None)
 
-    return df.to_dict(orient="records")
+    return df.to_dict(orient="records"), stale

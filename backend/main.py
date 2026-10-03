@@ -1,6 +1,6 @@
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from data_provider import get_price_history
 from volume_scanner import get_scan
@@ -20,15 +20,18 @@ app.add_middleware(
     allow_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Price-Stale"],
 )
 
 
 @app.get("/api/price/{symbol}")
-def get_price(symbol: str, start: str, end: str):
+def get_price(symbol: str, start: str, end: str, response: Response):
     try:
-        return get_price_history(symbol, start, end)
+        rows, stale = get_price_history(symbol, start, end)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+    response.headers["X-Price-Stale"] = "1" if stale else "0"
+    return rows
 
 
 @app.get("/api/symbols")

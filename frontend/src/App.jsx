@@ -40,6 +40,9 @@ import {
 } from './icons.jsx';
 
 const CHUNK_MONTHS = 6;
+// How long to wait before re-asking for candles the backend is still fetching.
+// Backend'in hâlâ çektiği mumları tekrar sormadan önce beklenen süre.
+const STALE_RETRY_MS = 4000;
 // Must match MA_PERIODS in backend/data_provider.py.
 // backend/data_provider.py içindeki MA_PERIODS ile aynı olmalı.
 const MA_PERIODS = [5, 9, 12, 20, 21, 50, 100, 200];
@@ -405,7 +408,9 @@ async function fetchRange(symbol, start, end) {
     }
     throw new Error(detail);
   }
-  return res.json();
+  // X-Price-Stale: the backend served the cache and is refreshing the last
+  // candles in the background, so the newest bars may be missing.
+  return { rows: await res.json(), stale: res.headers.get('X-Price-Stale') === '1' };
 }
 
 async function fetchPatterns(symbol, start, end) {
@@ -1257,6 +1262,7 @@ function App() {
   useEffect(() => {
     let chart;
     let cancelled = false;
+    let staleRetryId = null;
 
     let loadedData = [];
     let isLoadingMore = false;
@@ -1273,7 +1279,7 @@ function App() {
       newStart.setMonth(newStart.getMonth() - CHUNK_MONTHS);
 
       try {
-        const older = await fetchRange(symbol, newStart, newEnd);
+        const { rows: older } = await fetchRange(symbol, newStart, newEnd);
         if (cancelled) return;
 
         if (older.length === 0) {
@@ -1315,7 +1321,7 @@ function App() {
         // SR zonelarını fiyat verisinden SONRA, sırayla çekiyoruz - aynı anda
         // çekmek ikisinin de fiyat cache'ini aynı anda tazelemeye çalışmasına
         // ve TradingView'den 429 (rate limit) almasına yol açıyordu.
-        const data = await fetchRange(symbol, start, end);
+        const { rows: data, stale } = await fetchRange(symbol, start, end);
         if (cancelled) return;
         const srData = await fetchSrZones(symbol).catch(() => null);
         if (cancelled) return;
@@ -1374,6 +1380,30 @@ function App() {
         });
 
         chart.subscribeClick(handleChartClick);
+
+        // The chart is already up from the cache; the backend is fetching the
+        // newest candles in the background, so ask once more for them.
+        // Grafik önbellekten çizildi; backend en yeni mumları arka planda
+        // çekiyor, bir kez daha sorup onları da alıyoruz.
+        if (stale) {
+          staleRetryId = setTimeout(async () => {
+            staleRetryId = null;
+            try {
+              const { rows } = await fetchRange(symbol, start, end);
+              if (cancelled || rows.length === 0) return;
+              const firstNew = dateOf(rows[0]);
+              loadedData = [...loadedData.filter((row) => dateOf(row) < firstNew), ...rows];
+              loadedDataRef.current = loadedData;
+              setQuote(buildQuote(loadedData));
+              setUpdatedAt(new Date());
+              renderAllSeries(seriesMapRef.current, loadedData);
+              refreshMarkers();
+            } catch {
+              // Nothing to do - the chart already shows the cached data.
+              // Yapacak bir şey yok - grafik zaten önbellekteki veriyi gösteriyor.
+            }
+          }, STALE_RETRY_MS);
+        }
 
         // Loaded in the background: the first call may download XU100 history and take a while.
         // Arka planda yüklenir: ilk çağrı XU100 geçmişini indirebildiği için uzun sürebilir.
@@ -1443,6 +1473,7 @@ function App() {
 
     return () => {
       cancelled = true;
+      if (staleRetryId) clearTimeout(staleRetryId);
       if (chart) {
         chart._cleanupResizeObserver?.();
         chart.remove();
