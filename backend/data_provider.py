@@ -204,13 +204,17 @@ def attach_pe_yoy(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bool]:
+def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bool, bool]:
     """
-    Returns the rows plus a "stale" flag, true when the last few candles are
-    being refreshed in the background and the caller should ask again shortly.
+    Returns the rows plus two flags: "stale" when the last few candles are
+    being refreshed in the background, and "history_pending" when the deep
+    history is still being walked, so older bars may not be on disk yet. Both
+    mean the caller should ask again shortly.
 
-    Satırları ve bir "stale" bayrağını döner; bayrak true ise son birkaç mum
-    arka planda tazeleniyor ve çağıran kısa süre sonra tekrar sormalı.
+    Satırları ve iki bayrağı döner: "stale" son birkaç mumun arka planda
+    tazelendiğini, "history_pending" derin geçmişin hâlâ yürünmekte olduğunu
+    (yani eski barlar henüz diskte olmayabilir) söyler. İkisi de çağıranın kısa
+    süre sonra tekrar sorması gerektiği anlamına gelir.
     """
     symbol = symbol.upper()
 
@@ -219,6 +223,7 @@ def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bo
 
     price_cache.ensure_cached(symbol)
     stale = price_cache.maybe_refresh_recent(symbol, end)
+    history_pending = price_cache.history_pending(symbol)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         price_future = executor.submit(
@@ -249,4 +254,4 @@ def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bo
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.astype(object).where(pd.notnull(df), None)
 
-    return df.to_dict(orient="records"), stale
+    return df.to_dict(orient="records"), stale, history_pending

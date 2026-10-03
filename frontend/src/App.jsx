@@ -43,6 +43,12 @@ const CHUNK_MONTHS = 6;
 // How long to wait before re-asking for candles the backend is still fetching.
 // Backend'in hâlâ çektiği mumları tekrar sormadan önce beklenen süre.
 const STALE_RETRY_MS = 4000;
+// Older bars may still be downloading on the backend; how long to wait before
+// asking again, and how many times, before accepting that history has ended.
+// Eski barlar backend'de hâlâ iniyor olabilir; tekrar sormadan önce beklenen
+// süre ve geçmişin bittiğini kabul etmeden önceki deneme sayısı.
+const HISTORY_RETRY_MS = 3000;
+const HISTORY_RETRY_LIMIT = 10;
 // Must match MA_PERIODS in backend/data_provider.py.
 // backend/data_provider.py içindeki MA_PERIODS ile aynı olmalı.
 const MA_PERIODS = [5, 9, 12, 20, 21, 50, 100, 200];
@@ -410,7 +416,11 @@ async function fetchRange(symbol, start, end) {
   }
   // X-Price-Stale: the backend served the cache and is refreshing the last
   // candles in the background, so the newest bars may be missing.
-  return { rows: await res.json(), stale: res.headers.get('X-Price-Stale') === '1' };
+  return {
+    rows: await res.json(),
+    stale: res.headers.get('X-Price-Stale') === '1',
+    historyPending: res.headers.get('X-History-Pending') === '1',
+  };
 }
 
 async function fetchPatterns(symbol, start, end) {
@@ -1267,6 +1277,8 @@ function App() {
     let loadedData = [];
     let isLoadingMore = false;
     let noMoreData = false;
+    let historyRetries = 0;
+    let historyRetryId = null;
 
     async function loadMoreHistory() {
       if (isLoadingMore || noMoreData || loadedData.length === 0) return;
@@ -1279,13 +1291,27 @@ function App() {
       newStart.setMonth(newStart.getMonth() - CHUNK_MONTHS);
 
       try {
-        const { rows: older } = await fetchRange(symbol, newStart, newEnd);
+        const { rows: older, historyPending } = await fetchRange(symbol, newStart, newEnd);
         if (cancelled) return;
 
         if (older.length === 0) {
-          noMoreData = true;
+          // An empty answer while the backend is still walking the history
+          // means "not yet", not "no more" - so ask again instead of latching.
+          // Backend geçmişi hâlâ yürürken gelen boş yanıt "daha yok" değil
+          // "henüz yok" demek - kilitlemek yerine tekrar soruyoruz.
+          if (historyPending && historyRetries < HISTORY_RETRY_LIMIT) {
+            historyRetries += 1;
+            historyRetryId = setTimeout(() => {
+              historyRetryId = null;
+              loadMoreHistory();
+            }, HISTORY_RETRY_MS);
+          } else {
+            noMoreData = true;
+          }
           return;
         }
+
+        historyRetries = 0;
 
         const previousRange = chart.timeScale().getVisibleLogicalRange();
 
@@ -1474,6 +1500,7 @@ function App() {
     return () => {
       cancelled = true;
       if (staleRetryId) clearTimeout(staleRetryId);
+      if (historyRetryId) clearTimeout(historyRetryId);
       if (chart) {
         chart._cleanupResizeObserver?.();
         chart.remove();

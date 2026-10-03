@@ -36,10 +36,18 @@ REFRESH_CHECK_INTERVAL = 300
 # Önbellek en fazla bu kadar geride olup da hemen gösterilmeye değer sayılır.
 # Hafta sonunu kapsar: pazartesi en yeni mum cumanın.
 SERVE_STALE_MAX_DAYS = 3
+# One slice of the backwards walk through a symbol's history.
+# Bir sembolün geçmişinde geriye doğru yürünen dilimin boyu.
+BACKFILL_CHUNK_DAYS = 730
+# Safety limit for the backwards walk, so it cannot loop forever.
+# Geriye yürüyüşün güvenlik sınırı, sonsuz döngüye girmesin diye.
+EARLIEST_SANE_YEAR = 1985
 
 _last_refresh_check: dict[str, float] = {}
 _refreshing: set[str] = set()
 _refresh_guard = threading.Lock()
+_backfilling: set[str] = set()
+_backfill_guard = threading.Lock()
 
 
 def _get_connection() -> sqlite3.Connection:
@@ -55,6 +63,20 @@ def _get_connection() -> sqlite3.Connection:
             close REAL,
             volume REAL,
             PRIMARY KEY (symbol, date)
+        )
+        """
+    )
+    # Tracks whether the backwards walk through a symbol's history finished.
+    # Without it a restart mid-backfill would leave the symbol permanently
+    # shallow, since it already has rows.
+    # Bir sembolün geçmişinde geriye yürüyüşün tamamlanıp tamamlanmadığını
+    # tutar. Olmasa, backfill yarısında restart olan sembol satırları
+    # bulunduğu için kalıcı olarak sığ kalırdı.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS backfill_state (
+            symbol TEXT PRIMARY KEY,
+            complete INTEGER NOT NULL DEFAULT 0
         )
         """
     )
@@ -94,63 +116,139 @@ def _has_symbol(conn: sqlite3.Connection, symbol: str) -> bool:
     return row is not None
 
 
-def _backfill_full_history(symbol: str) -> pd.DataFrame:
-    """
-    borsapy's period='max' option hits TradingView's per-request depth limit
-    (for some stocks it cuts off a few decades back) even though much older
-    data may exist. The same "fetch backwards chunk by chunk" logic as the
-    frontend is applied here during the initial seed: step back in 2-year
-    slices until an empty response is returned.
+def _fetch_chunk(ticker, start, end) -> pd.DataFrame:
+    return ticker.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
 
-    borsapy'nin period='max' seçeneği, TradingView'in tek istekteki
-    derinlik sınırına takılıyor (bazı hisselerde birkaç on yıl önce
-    kesiliyor) - oysa gerçekte çok daha eskiye veri olabiliyor.
-    Frontend'deki "geriye doğru parça parça çek" mantığının aynısını
-    burada, ilk seed sırasında uyguluyoruz: boş bir yanıt alana kadar
-    2 yıllık dilimler halinde geriye gidiyoruz.
+
+def _oldest_cached_date(symbol: str):
+    conn = _get_connection()
+    try:
+        row = conn.execute("SELECT MIN(date) FROM prices WHERE symbol = ?", (symbol,)).fetchone()[0]
+    finally:
+        conn.close()
+    return datetime.fromisoformat(row[:10]).date() if row else None
+
+
+def _mark_backfill_complete(symbol: str) -> None:
+    conn = _get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO backfill_state (symbol, complete) VALUES (?, 1) "
+            "ON CONFLICT(symbol) DO UPDATE SET complete = 1",
+            (symbol,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def history_pending(symbol: str) -> bool:
+    """
+    True while the symbol's deep history has not been walked to the end, so a
+    request for older bars may legitimately come back empty for now.
+
+    Sembolün derin geçmişi sonuna kadar yürünmediyse True döner; bu durumda
+    daha eski barlar için gelen boş yanıt şimdilik normaldir.
+    """
+    conn = _get_connection()
+    try:
+        row = conn.execute(
+            "SELECT complete FROM backfill_state WHERE symbol = ?", (symbol,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return not (row and row[0])
+
+
+def deep_backfill(symbol: str) -> None:
+    """
+    Walks backwards from the oldest cached bar in BACKFILL_CHUNK_DAYS slices
+    until a response comes back empty, writing each slice as it arrives so a
+    restart resumes where it left off.
+
+    borsapy's period='max' hits TradingView's per-request depth limit (for some
+    stocks it cuts off a few decades back) even though much older data exists,
+    which is why the history is walked slice by slice instead.
+
+    En eski önbellek barından başlayıp BACKFILL_CHUNK_DAYS'lik dilimlerle, boş
+    yanıt gelene kadar geriye yürür; her dilimi geldiği anda yazar, böylece
+    restart kaldığı yerden devam eder.
+
+    borsapy'nin period='max' seçeneği TradingView'in tek istekteki derinlik
+    sınırına takılıyor (bazı hisselerde birkaç on yıl önce kesiliyor) - oysa
+    gerçekte çok daha eskiye veri var; geçmişi bu yüzden dilim dilim yürüyoruz.
     """
     ticker = bp.Ticker(symbol)
-    chunks = []
-    end = datetime.now()
-    # Safety limit to avoid an infinite loop.
-    # Güvenlik sınırı, sonsuz döngüye girmesin diye.
-    earliest_sane_year = 1985
+    oldest = _oldest_cached_date(symbol)
+    end = datetime.combine(oldest, datetime.min.time()) - timedelta(days=1) if oldest else datetime.now()
 
-    while end.year >= earliest_sane_year:
-        start = end - timedelta(days=730)
+    while end.year >= EARLIEST_SANE_YEAR:
+        start = end - timedelta(days=BACKFILL_CHUNK_DAYS)
         try:
-            chunk = ticker.history(
-                start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d")
-            )
+            chunk = _fetch_chunk(ticker, start, end)
         except Exception:
-            break
+            # Leave the symbol marked pending so a later request retries it.
+            # Sembol "pending" kalsın, sonraki istek yeniden denesin.
+            return
         if chunk.empty:
             break
-        chunks.append(chunk)
+        conn = _get_connection()
+        try:
+            _upsert(conn, symbol, chunk)
+        finally:
+            conn.close()
         end = start - timedelta(days=1)
 
-    if not chunks:
-        return pd.DataFrame()
+    _mark_backfill_complete(symbol)
 
-    full = pd.concat(chunks)
-    full = full[~full.index.duplicated(keep="first")]
-    return full.sort_index()
+
+def _deep_backfill_in_background(symbol: str) -> None:
+    with _backfill_guard:
+        if symbol in _backfilling:
+            return
+        _backfilling.add(symbol)
+
+    def run():
+        try:
+            deep_backfill(symbol)
+        finally:
+            with _backfill_guard:
+                _backfilling.discard(symbol)
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def ensure_cached(symbol: str) -> None:
     """
-    If the symbol has never been seen, fetches it chunk by chunk back to the earliest available date.
+    Seeds only the most recent slice synchronously - that is all the chart
+    draws at first - and walks the deep history in the background. Walking all
+    the way back to the eighties takes ~20 sequential requests, far too long to
+    hold the first response for.
 
-    Sembol hiç görülmediyse, gerçek en eskiye kadar parça parça çeker.
+    Senkron olarak yalnızca en yeni dilimi çeker - grafiğin ilk çizdiği kadarı
+    bu - ve derin geçmişi arka planda yürür. 80'lere kadar inmek ~20 ardışık
+    istek demek, ilk yanıtı o kadar bekletmek olmaz.
     """
     conn = _get_connection()
     try:
-        if _has_symbol(conn, symbol):
-            return
-        df = _backfill_full_history(symbol)
-        _upsert(conn, symbol, df)
+        seeded = _has_symbol(conn, symbol)
+        if not seeded:
+            now = datetime.now()
+            try:
+                chunk = _fetch_chunk(bp.Ticker(symbol), now - timedelta(days=BACKFILL_CHUNK_DAYS), now)
+            except Exception:
+                return
+            if chunk.empty:
+                # Nothing to walk back through for this symbol.
+                # Bu sembolde geriye yürünecek bir şey yok.
+                _mark_backfill_complete(symbol)
+                return
+            _upsert(conn, symbol, chunk)
     finally:
         conn.close()
+
+    if history_pending(symbol):
+        _deep_backfill_in_background(symbol)
 
 
 def _last_cached_date(symbol: str):

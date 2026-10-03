@@ -20,17 +20,18 @@ app.add_middleware(
     allow_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")],
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Price-Stale"],
+    expose_headers=["X-Price-Stale", "X-History-Pending"],
 )
 
 
 @app.get("/api/price/{symbol}")
 def get_price(symbol: str, start: str, end: str, response: Response):
     try:
-        rows, stale = get_price_history(symbol, start, end)
+        rows, stale, history_pending = get_price_history(symbol, start, end)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
     response.headers["X-Price-Stale"] = "1" if stale else "0"
+    response.headers["X-History-Pending"] = "1" if history_pending else "0"
     return rows
 
 
