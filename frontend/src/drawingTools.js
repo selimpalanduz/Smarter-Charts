@@ -235,14 +235,24 @@ export class SRZonePrimitive {
     this._paneViews = [new BasePaneView(this)];
     this._chart = null;
     this._series = null;
+    this._requestUpdate = null;
   }
-  attached({ chart, series }) {
+  attached({ chart, series, requestUpdate }) {
     this._chart = chart;
     this._series = series;
+    this._requestUpdate = requestUpdate;
   }
+  // attachPrimitive/detachPrimitive don't repaint the chart by themselves.
+  // Detaching asks for the repaint here; attaching leaves it to the caller,
+  // which attaches a whole set at once.
   detached() {
+    this._requestUpdate?.();
     this._chart = null;
     this._series = null;
+    this._requestUpdate = null;
+  }
+  requestRedraw() {
+    this._requestUpdate?.();
   }
   updateAllViews() {
     this._paneViews.forEach((v) => v.update());

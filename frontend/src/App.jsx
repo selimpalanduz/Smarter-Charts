@@ -663,6 +663,8 @@ function applySrZones(series, primitivesRef, srData, visible) {
 
   primitives.forEach((p) => series.attachPrimitive(p));
   primitivesRef.current = primitives;
+  // Nothing repaints the chart on attach, so ask for it once the set is on.
+  primitives[0]?.requestRedraw();
 }
 
 // Redraws the psychological level lines: dashed for round numbers, dotted for the 52-week high/low.
