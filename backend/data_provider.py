@@ -3,18 +3,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import borsapy as bp
-import httpx
 import pandas as pd
 import numpy as np
 import price_cache
+from fundamentals import schema, statements
 
 BUFFER_DAYS = 90
 PE_YOY_BUFFER_DAYS = 400
 MA_PERIODS = (5, 9, 12, 20, 21, 50, 100, 200)
-
-ISYATIRIM_MALITABLO_URL = (
-    "https://www.isyatirim.com.tr/_Layouts/15/IsYatirim.Website/Common/Data.aspx/MaliTablo"
-)
 
 _fundamentals_cache: dict[str, tuple[float, pd.Series]] = {}
 _net_income_cache: dict[str, tuple[float, pd.Series]] = {}
@@ -24,74 +20,16 @@ FUNDAMENTALS_CACHE_TTL = 3600
 NET_INCOME_QUARTERS = 20
 
 
-def _fetch_income_stmt_quarters(symbol: str, num_quarters: int = 12) -> pd.Series:
-    """
-    borsapy's get_income_stmt() guesses which quarter may have been published
-    based on a FIXED month - it never checks whether data actually exists.
-    So the same İş Yatırım endpoint is queried directly, stepping backwards
-    from the ACTUAL current quarter.
-
-    borsapy'nin get_income_stmt() fonksiyonu, hangi çeyreğin yayınlanmış
-    olabileceğini SABİT bir aya göre tahmin ediyor - gerçekte veri var mı
-    diye hiç sormuyor. Bu yüzden aynı İş Yatırım uç noktasına, ŞU ANKİ
-    gerçek çeyrekten geriye doğru kendimiz soruyoruz.
-    """
-    now = datetime.now()
-    current_q = (now.month - 1) // 3 + 1
-
-    periods = []
-    year, q = now.year, current_q
-    for _ in range(num_quarters):
-        periods.append((year, q * 3))
-        q -= 1
-        if q == 0:
-            q = 4
-            year -= 1
-
-    records: dict[str, dict[str, float]] = {}
-
-    for batch_start in range(0, len(periods), 4):
-        batch = periods[batch_start : batch_start + 4]
-        params = {"companyCode": symbol.upper(), "exchange": "TRY", "financialGroup": "XI_29"}
-        for i, (y, p) in enumerate(batch, 1):
-            params[f"year{i}"] = y
-            params[f"period{i}"] = p
-
-        try:
-            resp = httpx.get(ISYATIRIM_MALITABLO_URL, params=params, timeout=15)
-            items = resp.json().get("value", [])
-        except Exception:
-            continue
-
-        for item in items:
-            if not str(item.get("itemCode", "")).startswith("3Z"):
-                continue
-            name = item.get("itemDescTr")
-            if name != "Ana Ortaklık Payları":
-                continue
-            for i, (y, p) in enumerate(batch, 1):
-                col = f"{y}Q{p // 3}"
-                val = item.get(f"value{i}")
-                if val is not None:
-                    records.setdefault(name, {})[col] = float(val)
-
-    if not records:
-        return pd.Series(dtype=float)
-
-    return pd.Series(records["Ana Ortaklık Payları"])
-
-
 def get_quarterly_net_income(symbol: str) -> pd.Series:
     """
-    İş Yatırım reports year-to-date cumulative figures; the single quarter is
-    obtained by subtracting the previous quarter. If the previous quarter is
-    missing (e.g. the oldest Q4 in the series) the result is left as NaN —
-    otherwise the annual total would be mistaken for a single quarter.
+    Single-quarter net income attributable to the parent, as reported — no
+    inflation restatement, so the chart's P/E keeps comparing a nominal price
+    against nominal earnings. The real series lives in fundamentals.statements.
     Index format: "2026Q2".
 
-    İş Yatırım yıl içi kümülatif veriyor; tek çeyreği bulmak için bir önceki
-    çeyreği çıkarıyoruz. Önceki çeyrek eksikse (ör. serinin en eski Q4'ü)
-    sonucu NaN bırakıyoruz — aksi halde yıllık toplam tek çeyrek sanılır.
+    Ana ortaklığa ait tek çeyrek net kâr, raporlandığı gibi — enflasyon
+    düzeltmesi yok, böylece grafiğin F/K'sı nominal fiyatı nominal kârla
+    karşılaştırmaya devam ediyor. Reel seri fundamentals.statements içinde.
     Index: "2026Q2" biçiminde.
     """
     symbol = symbol.upper()
@@ -100,21 +38,16 @@ def get_quarterly_net_income(symbol: str) -> pd.Series:
     if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
         return cached[1]
 
-    cumulative = _fetch_income_stmt_quarters(symbol, NET_INCOME_QUARTERS).sort_index()
-    standalone = {}
-    for col, value in cumulative.items():
-        year, q = int(col[:4]), int(col[5:])
-        if q == 1:
-            standalone[col] = value
-            continue
-        prev = cumulative.get(f"{year}Q{q - 1}")
-        standalone[col] = value - prev if prev is not None else np.nan
+    periods = statements.quarterly(
+        symbol, quarters=NET_INCOME_QUARTERS, real=False
+    )["items"].get(schema.NET_INCOME, {}).get("periods", {})
 
-    result = pd.Series(standalone, dtype=float)
+    result = pd.Series(
+        {period: (np.nan if value is None else value) for period, value in periods.items()},
+        dtype=float,
+    )
     _net_income_cache[symbol] = (now, result)
     return result
-
-
 def get_ttm_eps(symbol: str) -> pd.Series:
     """
     TTM EPS = (net income of the last 4 actual quarters) / (current share count).
