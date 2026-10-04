@@ -22,6 +22,7 @@ from . import inflation, store
 from .isyatirim import fetch_quarters, recent_quarters
 from .schema import (
     CURRENCY_TRY,
+    GROUP_FINANCIAL,
     CURRENCY_USD,
     FLOW,
     REVENUE,
@@ -104,6 +105,30 @@ def rows(
     return values, labels
 
 
+def classify(symbol: str) -> str:
+    """
+    "nonfinancial" when the symbol reports under XI_29, "financial" when it
+    only answers under UFRS (banks and insurers, out of scope for now), and
+    "unknown" when neither returns anything.
+
+    Only reached when XI_29 came back empty, so the extra request costs
+    nothing on the common path.
+
+    Sembol XI_29 altında raporluyorsa "nonfinancial", yalnızca UFRS altında
+    cevap veriyorsa "financial" (banka ve sigorta, şimdilik kapsam dışı),
+    ikisi de boşsa "unknown".
+
+    Yalnızca XI_29 boş döndüğünde çağrılıyor, yani yaygın yolda ek istek
+    maliyeti yok.
+    """
+    probe = recent_quarters(4)
+    values, _ = fetch_quarters(symbol, probe)
+    if values:
+        return "nonfinancial"
+    values, _ = fetch_quarters(symbol, probe, group=GROUP_FINANCIAL)
+    return "financial" if values else "unknown"
+
+
 def quarterly(
     symbol: str,
     quarters: int = QUARTERS,
@@ -172,9 +197,29 @@ def quarterly(
             out[period] = None if previous is None else current - previous
         items[code] = {"label": labels.get(code, ""), "kind": kind, "periods": out}
 
+    if not values:
+        kind = classify(symbol)
+        store.remember_sector(symbol, kind)
+        return {
+            "symbol": symbol.upper(),
+            "currency": currency,
+            "basis": f"{currency.lower()}-{'real' if real else 'nominal'}",
+            "target": None,
+            "real": real,
+            "items": {},
+            "unitDropped": [],
+            "noFactor": [],
+            "supported": False,
+            "sector": kind,
+        }
+
+    store.remember_sector(symbol, "nonfinancial")
+
     return {
         "symbol": symbol.upper(),
         "currency": currency,
+        "supported": True,
+        "sector": "nonfinancial",
         "basis": f"{currency.lower()}-{'real' if real else 'nominal'}",
         "target": target,
         "real": real,

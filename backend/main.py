@@ -11,6 +11,8 @@ from moves import get_moves
 from kap import get_text
 from anchors import get_anchors
 from symbols import get_symbols
+from fundamentals.router import router as fundamentals_router
+from fundamentals import warmer as fundamentals_warmer
 import anchor_scanner
 import cache_warmer
 
@@ -27,6 +29,12 @@ app.add_middleware(
 # Off unless WARM_CACHE is set; see cache_warmer.
 # WARM_CACHE verilmedikçe kapalı; bkz. cache_warmer.
 cache_warmer.start()
+
+# Off unless WARM_FUNDAMENTALS is set; see fundamentals.warmer.
+# WARM_FUNDAMENTALS verilmedikçe kapalı; bkz. fundamentals.warmer.
+fundamentals_warmer.start()
+
+app.include_router(fundamentals_router, prefix="/api/fundamentals", tags=["fundamentals"])
 
 
 @app.get("/api/price/{symbol}")

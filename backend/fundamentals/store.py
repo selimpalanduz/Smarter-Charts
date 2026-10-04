@@ -34,14 +34,18 @@ TTL = 7 * 24 * 3600
 # so an older one is discarded rather than migrated.
 # Düzen değiştiğinde artırılıyor. Bu dosya açık bir uç noktanın önbelleği,
 # o yüzden eskisi taşınmak yerine atılıyor.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     if conn.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
-        conn.executescript("DROP TABLE IF EXISTS facts; DROP TABLE IF EXISTS fetched;")
+        conn.executescript(
+            "DROP TABLE IF EXISTS facts;"
+            "DROP TABLE IF EXISTS fetched;"
+            "DROP TABLE IF EXISTS sectors;"
+        )
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.executescript(
         """
@@ -58,6 +62,11 @@ def connect() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS items (
             code  TEXT PRIMARY KEY,
             label TEXT
+        );
+        CREATE TABLE IF NOT EXISTS sectors (
+            symbol     TEXT PRIMARY KEY,
+            kind       TEXT NOT NULL,
+            checked_at REAL NOT NULL
         );
         CREATE TABLE IF NOT EXISTS fetched (
             symbol     TEXT NOT NULL,
@@ -135,6 +144,22 @@ def load(
     for code, period, value in facts:
         values.setdefault(code, {})[period] = value
     return values, labels
+
+
+def remember_sector(symbol: str, kind: str) -> None:
+    """Records whether a symbol is in scope, so the probe is not repeated."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO sectors (symbol, kind, checked_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(symbol) DO UPDATE SET kind = excluded.kind, checked_at = excluded.checked_at",
+            (symbol.upper(), kind, time.time()),
+        )
+
+
+def sectors() -> dict[str, str]:
+    """{symbol: "nonfinancial" | "financial" | "unknown"} as far as it is known."""
+    with connect() as conn:
+        return dict(conn.execute("SELECT symbol, kind FROM sectors").fetchall())
 
 
 def coverage() -> dict:
