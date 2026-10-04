@@ -23,6 +23,18 @@ satır koduna göre tablolanıyor.
 GROUP_NONFINANCIAL = "XI_29"
 GROUP_FINANCIAL = "UFRS"
 
+# İş Yatırım converts flow items at the period's average rate and balance sheet
+# items at the period-end rate, which is the correct treatment for each and
+# matches the FLOW/STOCK split below. Only "USD" is honoured; anything else
+# (including "EUR") silently returns lira.
+# İş Yatırım akış kalemlerini dönem ortalama kuruyla, bilanço kalemlerini dönem
+# sonu kuruyla çeviriyor; ikisi için de doğru yöntem bu ve aşağıdaki
+# FLOW/STOCK ayrımıyla örtüşüyor. Yalnızca "USD" tanınıyor; başka her şey
+# ("EUR" dahil) sessizce lira dönüyor.
+CURRENCY_TRY = "TRY"
+CURRENCY_USD = "USD"
+CURRENCIES = (CURRENCY_TRY, CURRENCY_USD)
+
 STOCK = "stock"
 FLOW = "flow"
 

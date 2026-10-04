@@ -21,6 +21,8 @@ yerine.
 from . import inflation, store
 from .isyatirim import fetch_quarters, recent_quarters
 from .schema import (
+    CURRENCY_TRY,
+    CURRENCY_USD,
     FLOW,
     REVENUE,
     UNIT_UNSTABLE,
@@ -78,7 +80,10 @@ def _rescale_unit_unstable(values: dict[str, dict[str, float]]) -> list[str]:
 
 
 def rows(
-    symbol: str, quarters: int = QUARTERS, refresh: bool = False
+    symbol: str,
+    quarters: int = QUARTERS,
+    refresh: bool = False,
+    currency: str = CURRENCY_TRY,
 ) -> tuple[dict[str, dict[str, float]], dict[str, str]]:
     """
     As-reported rows, from disk when they are fresh enough, otherwise fetched
@@ -88,14 +93,14 @@ def rows(
     çekilip diske yazılarak.
     """
     symbol = symbol.upper()
-    if not refresh and store.is_fresh(symbol, quarters):
-        values, labels = store.load(symbol)
+    if not refresh and store.is_fresh(symbol, quarters, currency):
+        values, labels = store.load(symbol, currency)
         if values:
             return values, labels
 
-    values, labels = fetch_quarters(symbol, recent_quarters(quarters))
+    values, labels = fetch_quarters(symbol, recent_quarters(quarters), currency=currency)
     if values:
-        store.save(symbol, values, labels, quarters)
+        store.save(symbol, values, labels, quarters, currency)
     return values, labels
 
 
@@ -104,6 +109,7 @@ def quarterly(
     quarters: int = QUARTERS,
     real: bool = True,
     refresh: bool = False,
+    currency: str = CURRENCY_TRY,
 ) -> dict:
     """
     {
@@ -113,13 +119,19 @@ def quarterly(
       "noFactor": periods with no TÜFE multiplier yet (real only),
     }
 
-    `real=True` restates every figure in the money of the latest published
-    TÜFE month; `real=False` leaves them as reported.
+    In lira, `real=True` restates every figure in the money of the latest
+    published TÜFE month and `real=False` leaves them as reported. In dollars
+    the figures already share a measuring stick, so TÜFE is not applied — the
+    lira index would be the wrong deflator for them.
 
-    `real=True` her rakamı en son yayınlanan TÜFE ayının parasına çevirir;
-    `real=False` raporlandığı gibi bırakır.
+    Lirada `real=True` her rakamı en son yayınlanan TÜFE ayının parasına
+    çevirir, `real=False` raporlandığı gibi bırakır. Dolarda rakamlar zaten
+    ortak bir ölçüyü paylaşıyor, o yüzden TÜFE uygulanmıyor — lira endeksi
+    onlar için yanlış deflatör olurdu.
     """
-    values, labels = rows(symbol, quarters, refresh=refresh)
+    currency = CURRENCY_USD if str(currency).upper() == CURRENCY_USD else CURRENCY_TRY
+    real = real and currency == CURRENCY_TRY
+    values, labels = rows(symbol, quarters, refresh=refresh, currency=currency)
     # Disk may hold more history than asked for; the depth is part of the contract.
     # Diskte istenenden fazla geçmiş olabilir; derinlik sözleşmenin parçası.
     wanted = {f"{year}Q{quarter}" for year, quarter in recent_quarters(quarters)}
@@ -162,6 +174,8 @@ def quarterly(
 
     return {
         "symbol": symbol.upper(),
+        "currency": currency,
+        "basis": f"{currency.lower()}-{'real' if real else 'nominal'}",
         "target": target,
         "real": real,
         "items": items,

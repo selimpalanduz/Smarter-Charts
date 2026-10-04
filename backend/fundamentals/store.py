@@ -20,6 +20,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from .schema import CURRENCY_TRY
+
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "fundamentals.db"
 # Seconds. Quarterly data changes four times a year, but a company can file
 # late or restate, so a symbol is re-asked about weekly.
@@ -28,40 +30,54 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "fundamentals.db"
 TTL = 7 * 24 * 3600
 
 
+# Bumped when the layout changes. This file is a cache of a public endpoint,
+# so an older one is discarded rather than migrated.
+# Düzen değiştiğinde artırılıyor. Bu dosya açık bir uç noktanın önbelleği,
+# o yüzden eskisi taşınmak yerine atılıyor.
+SCHEMA_VERSION = 2
+
+
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
+    if conn.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+        conn.executescript("DROP TABLE IF EXISTS facts; DROP TABLE IF EXISTS fetched;")
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS facts (
-            symbol TEXT NOT NULL,
-            period TEXT NOT NULL,
-            code   TEXT NOT NULL,
-            value  REAL NOT NULL,
-            PRIMARY KEY (symbol, period, code)
+            symbol   TEXT NOT NULL,
+            currency TEXT NOT NULL,
+            period   TEXT NOT NULL,
+            code     TEXT NOT NULL,
+            value    REAL NOT NULL,
+            PRIMARY KEY (symbol, currency, period, code)
         );
-        CREATE INDEX IF NOT EXISTS facts_symbol ON facts (symbol);
-        CREATE INDEX IF NOT EXISTS facts_code ON facts (code, period);
+        CREATE INDEX IF NOT EXISTS facts_symbol ON facts (symbol, currency);
+        CREATE INDEX IF NOT EXISTS facts_code ON facts (code, currency, period);
         CREATE TABLE IF NOT EXISTS items (
             code  TEXT PRIMARY KEY,
             label TEXT
         );
         CREATE TABLE IF NOT EXISTS fetched (
-            symbol     TEXT PRIMARY KEY,
+            symbol     TEXT NOT NULL,
+            currency   TEXT NOT NULL,
             quarters   INTEGER NOT NULL,
             fetched_at REAL NOT NULL,
-            rows       INTEGER NOT NULL
+            rows       INTEGER NOT NULL,
+            PRIMARY KEY (symbol, currency)
         );
         """
     )
     return conn
 
 
-def is_fresh(symbol: str, quarters: int) -> bool:
+def is_fresh(symbol: str, quarters: int, currency: str = CURRENCY_TRY) -> bool:
     """Whether the symbol was fetched recently and over at least this depth."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT quarters, fetched_at FROM fetched WHERE symbol = ?", (symbol.upper(),)
+            "SELECT quarters, fetched_at FROM fetched WHERE symbol = ? AND currency = ?",
+            (symbol.upper(), currency),
         ).fetchone()
     if not row:
         return False
@@ -69,37 +85,49 @@ def is_fresh(symbol: str, quarters: int) -> bool:
     return depth >= quarters and (time.time() - fetched_at) < TTL
 
 
-def save(symbol: str, values: dict[str, dict[str, float]], labels: dict[str, str], quarters: int) -> int:
-    """Replaces the symbol's rows; returns how many were written."""
+def save(
+    symbol: str,
+    values: dict[str, dict[str, float]],
+    labels: dict[str, str],
+    quarters: int,
+    currency: str = CURRENCY_TRY,
+) -> int:
+    """Replaces the symbol's rows in this currency; returns how many were written."""
     symbol = symbol.upper()
     rows = [
-        (symbol, period, code, value)
+        (symbol, currency, period, code, value)
         for code, series in values.items()
         for period, value in series.items()
     ]
     with connect() as conn:
-        conn.execute("DELETE FROM facts WHERE symbol = ?", (symbol,))
-        conn.executemany("INSERT INTO facts (symbol, period, code, value) VALUES (?, ?, ?, ?)", rows)
+        conn.execute("DELETE FROM facts WHERE symbol = ? AND currency = ?", (symbol, currency))
+        conn.executemany(
+            "INSERT INTO facts (symbol, currency, period, code, value) VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
         conn.executemany(
             "INSERT INTO items (code, label) VALUES (?, ?) "
             "ON CONFLICT(code) DO UPDATE SET label = excluded.label",
             [(code, label) for code, label in labels.items() if label],
         )
         conn.execute(
-            "INSERT INTO fetched (symbol, quarters, fetched_at, rows) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(symbol) DO UPDATE SET "
+            "INSERT INTO fetched (symbol, currency, quarters, fetched_at, rows) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(symbol, currency) DO UPDATE SET "
             "quarters = excluded.quarters, fetched_at = excluded.fetched_at, rows = excluded.rows",
-            (symbol, quarters, time.time(), len(rows)),
+            (symbol, currency, quarters, time.time(), len(rows)),
         )
     return len(rows)
 
 
-def load(symbol: str) -> tuple[dict[str, dict[str, float]], dict[str, str]]:
+def load(
+    symbol: str, currency: str = CURRENCY_TRY
+) -> tuple[dict[str, dict[str, float]], dict[str, str]]:
     """({code: {period: value}}, {code: label}) as stored."""
     symbol = symbol.upper()
     with connect() as conn:
         facts = conn.execute(
-            "SELECT code, period, value FROM facts WHERE symbol = ?", (symbol,)
+            "SELECT code, period, value FROM facts WHERE symbol = ? AND currency = ?",
+            (symbol, currency),
         ).fetchall()
         labels = dict(conn.execute("SELECT code, label FROM items").fetchall())
 
@@ -110,9 +138,13 @@ def load(symbol: str) -> tuple[dict[str, dict[str, float]], dict[str, str]]:
 
 
 def coverage() -> dict:
-    """What is on disk: symbol count, row count, oldest fetch."""
+    """What is on disk, per currency: symbol count, row count, oldest fetch."""
     with connect() as conn:
-        symbols, rows, oldest = conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(rows), 0), MIN(fetched_at) FROM fetched"
-        ).fetchone()
-    return {"symbols": symbols, "rows": rows, "oldestFetch": oldest}
+        rows = conn.execute(
+            "SELECT currency, COUNT(*), COALESCE(SUM(rows), 0), MIN(fetched_at) "
+            "FROM fetched GROUP BY currency"
+        ).fetchall()
+    return {
+        currency: {"symbols": symbols, "rows": total, "oldestFetch": oldest}
+        for currency, symbols, total, oldest in rows
+    }

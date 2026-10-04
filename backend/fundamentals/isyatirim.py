@@ -25,7 +25,7 @@ from datetime import datetime
 
 import httpx
 
-from .schema import GROUP_NONFINANCIAL
+from .schema import CURRENCY_TRY, GROUP_NONFINANCIAL
 
 URL = (
     "https://www.isyatirim.com.tr/_Layouts/15/IsYatirim.Website/Common/Data.aspx/MaliTablo"
@@ -49,7 +49,10 @@ def recent_quarters(count: int) -> list[tuple[int, int]]:
 
 
 def fetch_quarters(
-    symbol: str, quarters: list[tuple[int, int]], group: str = GROUP_NONFINANCIAL
+    symbol: str,
+    quarters: list[tuple[int, int]],
+    group: str = GROUP_NONFINANCIAL,
+    currency: str = CURRENCY_TRY,
 ) -> tuple[dict[str, dict[str, float]], dict[str, str]]:
     """
     ({item_code: {"2025Q4": value}}, {item_code: Turkish description}).
@@ -68,7 +71,11 @@ def fetch_quarters(
         batch = quarters[start : start + SLOTS]
         padded = batch + [batch[0]] * (SLOTS - len(batch))
 
-        params = {"companyCode": symbol.upper(), "exchange": "TRY", "financialGroup": group}
+        params = {
+            "companyCode": symbol.upper(),
+            "exchange": currency,
+            "financialGroup": group,
+        }
         for i, (year, quarter) in enumerate(padded, 1):
             params[f"year{i}"] = year
             params[f"period{i}"] = quarter * 3
