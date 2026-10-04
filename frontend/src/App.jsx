@@ -15,6 +15,7 @@ import {
   DailyChangePrimitive,
 } from './drawingTools.js';
 import SymbolPicker from './SymbolPicker.jsx';
+import FundamentalsView from './FundamentalsView.jsx';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
 import PatternSearchWidget from './PatternSearchWidget.jsx';
 import MoveReasonsWidget from './MoveReasonsWidget.jsx';
@@ -828,6 +829,7 @@ function App() {
   const [loadingSlow, setLoadingSlow] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState('indicators');
+  const [view, setView] = useState('chart');
   const [quote, setQuote] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [session, setSession] = useState(() => bistSession());
@@ -2140,6 +2142,24 @@ function App() {
           </div>
           <div className="stc-vrule" />
 
+          <div className="stc-seg" role="group" aria-label={str.viewChart + ' / ' + str.viewFundamentals}>
+            <button
+              className={view === 'chart' ? 'is-active' : ''}
+              aria-pressed={view === 'chart'}
+              onClick={() => setView('chart')}
+            >
+              {str.viewChart}
+            </button>
+            <button
+              className={view === 'fundamentals' ? 'is-active' : ''}
+              aria-pressed={view === 'fundamentals'}
+              onClick={() => setView('fundamentals')}
+            >
+              {str.viewFundamentals}
+            </button>
+          </div>
+          <div className="stc-vrule" />
+
           <SymbolPicker symbol={symbol} onSelect={setSymbol} inputRef={symbolInputRef} />
 
           {quote && (
@@ -2200,7 +2220,7 @@ function App() {
           </button>
         </header>
 
-        <div style={{ flexGrow: 1, display: 'flex', minHeight: 0 }}>
+        <div style={{ flexGrow: 1, display: view === 'chart' ? 'flex' : 'none', minHeight: 0 }}>
           <nav className="stc-rail" aria-label={str.toolsTitle}>
             <RailButton label={str.cursor} shortcut="Esc" active={!activeTool} onClick={() => handleSelectTool(null)}>
               <CursorIcon />
@@ -2384,6 +2404,8 @@ function App() {
             </div>
           </aside>
         </div>
+
+        {view === 'fundamentals' && <FundamentalsView symbol={symbol} />}
 
         <footer className="stc-statusbar">
           <span>{symbol} · 1D · BIST</span>
