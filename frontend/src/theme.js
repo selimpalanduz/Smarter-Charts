@@ -65,6 +65,13 @@ export const THEME = {
   },
 };
 
+// Series colours for the statement charts, checked for colour-vision
+// separation and contrast against both the dark and the light surface, so one
+// set serves both themes.
+// Mali tablo grafiklerinin seri renkleri; renk körlüğü ayrımı ve kontrast için
+// hem koyu hem açık zeminde doğrulandı, tek set ikisine de yetiyor.
+export const SERIES = ['#c48622', '#3f86bd', '#36a776'];
+
 // Canvas-drawn chart parts can't read CSS variables, so they read the active palette from here.
 // Canvas'a çizilen grafik parçaları CSS değişkenlerini okuyamaz; aktif paleti buradan okur.
 let active = THEME.dark;

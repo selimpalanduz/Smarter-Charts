@@ -1591,6 +1591,10 @@ function App() {
           '--accent': t.accent,
           '--accent-hover': t.accentHover,
           '--accent-ring': t.accentRing,
+          '--accent-soft': t.accentSoft,
+          '--grid-color': t.gridColor,
+          '--separator-hover': t.separatorHover,
+          '--crosshair': t.crosshair,
         }}
       >
         <style>{`
