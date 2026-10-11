@@ -1,12 +1,17 @@
 """
 TÜFE index for restating figures in a common purchasing power.
 
-Every İş Yatırım figure is stated in the money of its own period end: pre-2024
-rows because that is when the money was earned, and inflation-adjusted rows
-(TMS 29, mandatory from the annual report for the period ending 31.12.2023)
-because each report restates everything to its own reporting date. One rule
-therefore covers the whole series — scale by TÜFE from the period end to a
-common month.
+Figures reach this module stated in the money of their own period end:
+pre-2024 rows because that is when the money was earned, and
+inflation-adjusted rows (TMS 29, mandatory from the annual report for the
+period ending 31.12.2023) because each report restates everything to its own
+reporting date. One rule therefore covers the whole series — scale by TÜFE
+from the period end to a common month.
+
+That holds only because statements._undo_annual_restatement has already run:
+İş Yatırım serves the Q4 column in the following report's money, not its
+own. Scaling it here without that step would count a year of inflation
+twice.
 
 The index is chained from monthly rates rather than read as a level: TCMB's
 calculator does return a level but answers 500 for some date pairs. Only
@@ -15,11 +20,16 @@ TCMB's own 2021-12 to 2025-12 ratio to within 0.003%.
 
 Rakamları ortak bir paranın değerine getirmek için TÜFE endeksi.
 
-Her İş Yatırım rakamı kendi dönem sonundaki paranın değerinde: 2024 öncesi
+Bu modüle gelen rakamlar kendi dönem sonundaki paranın değerinde: 2024 öncesi
 satırlar para o zaman kazanıldığı için, enflasyon düzeltmeli satırlar (TMS 29,
 31.12.2023'te sona eren dönemin yıllık raporundan itibaren zorunlu) ise her
 rapor her şeyi kendi raporlama tarihine çevirdiği için. Dolayısıyla tüm seri
 için tek kural yeterli — dönem sonundan ortak bir aya TÜFE ile ölçekle.
+
+Bu ancak statements._undo_annual_restatement çalıştıktan sonra geçerli: İş
+Yatırım Q4 kolonunu kendi parasında değil bir sonraki raporun parasında
+veriyor. O adım olmadan burada ölçeklemek bir yıllık enflasyonu iki kez
+saymak olur.
 
 Endeks seviye olarak okunmuyor, aylık oranlardan zincirleniyor: TCMB'nin
 hesaplayıcısı seviye veriyor ama bazı tarih çiftlerinde 500 dönüyor. Yalnızca

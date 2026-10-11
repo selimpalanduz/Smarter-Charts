@@ -43,6 +43,72 @@ def _previous(period: str) -> str | None:
     return f"{year}Q{int(quarter) - 1}" if int(quarter) > 1 else None
 
 
+def _restatement_target(periods: list[str], year: int) -> str | None:
+    """
+    The month a year's Q4 column arrives in: the period end of the latest
+    report filed the following year. None when that year has filed nothing
+    yet, in which case the column is still in its own money.
+
+    Bir yılın Q4 kolonunun geldiği ay: ertesi yıl açıklanan en son raporun
+    dönem sonu. O yıl henüz bir şey açıklamadıysa None; o durumda kolon hâlâ
+    kendi parasında.
+    """
+    later = [p for p in periods if int(p.split("Q")[0]) == year + 1]
+    return inflation.quarter_end_month(max(later)) if later else None
+
+
+def _undo_annual_restatement(values: dict[str, dict[str, float]]) -> list[str]:
+    """
+    Takes the Q4 column back to its own period end, and says which periods
+    were moved.
+
+    İş Yatırım serves Q1-Q3 in the money of their own period end, but Q4 in
+    the money of the NEXT report — it is the comparative column as the
+    following year restates it. Verified against Fintables on THYAO: 2024Q4
+    came scaled by TÜFE from 2024-12 to 2025-12 and 2025Q4 from 2025-12 to
+    2026-06, to four decimals, on income, cash flow and balance sheet lines
+    alike, and in both the lira and the dollar presentation.
+
+    Left alone it inflates every annual figure by a year of inflation, makes
+    Q4 (annual less nine months) subtract two different currencies from each
+    other, and double counts when the real basis scales it again.
+
+    Q4 kolonunu kendi dönem sonuna geri getirir, taşınan dönemleri döner.
+
+    İş Yatırım Q1-Q3'ü kendi dönem sonunun parasında veriyor, ama Q4'ü BİR
+    SONRAKİ raporun parasında — ertesi yılın düzelttiği karşılaştırma kolonu
+    bu. THYAO'da Fintables'a karşı doğrulandı: 2024Q4 TÜFE ile 2024-12'den
+    2025-12'ye, 2025Q4 ise 2025-12'den 2026-06'ya ölçeklenmiş geliyor; dört
+    ondalık basamağa kadar, gelir tablosu, nakit akım ve bilanço satırlarında
+    aynı şekilde, hem lira hem dolar sunumunda.
+
+    Dokunulmazsa her yıllık rakamı bir yıllık enflasyon kadar şişiriyor, Q4'ü
+    (yıllık eksi dokuz aylık) iki ayrı paranın birbirinden çıkarılması hâline
+    getiriyor ve reel tabanda bir kez daha ölçeklenerek çifte sayılıyor.
+    """
+    periods = sorted({period for series in values.values() for period in series})
+    index = inflation.cpi_index()
+    if not index:
+        return []
+
+    moved = []
+    for period in periods:
+        year, quarter = period.split("Q")
+        if quarter != "4":
+            continue
+        target = _restatement_target(periods, int(year))
+        if target is None:
+            continue
+        factor = inflation.factor(period, target, index)
+        if not factor or factor <= 1:
+            continue
+        for series in values.values():
+            if period in series:
+                series[period] /= factor
+        moved.append(period)
+    return moved
+
+
 def _rescale_unit_unstable(values: dict[str, dict[str, float]]) -> list[str]:
     """
     Domestic/foreign sales switch unit between reports, so each period is
@@ -157,6 +223,13 @@ def quarterly(
     currency = CURRENCY_USD if str(currency).upper() == CURRENCY_USD else CURRENCY_TRY
     real = real and currency == CURRENCY_TRY
     values, labels = rows(symbol, quarters, refresh=refresh, currency=currency)
+    # Before anything reads a figure: the Q4 column arrives in the next
+    # report's money. Done on the whole of what is on disk, so the oldest
+    # year in the window still has the following year to look at.
+    # Herhangi bir rakam okunmadan önce: Q4 kolonu bir sonraki raporun
+    # parasında geliyor. Diskteki tüm veri üzerinde yapılıyor ki penceredeki
+    # en eski yıl da ertesi yılı görebilsin.
+    restated = _undo_annual_restatement(values)
     # Disk may hold more history than asked for; the depth is part of the contract.
     # Diskte istenenden fazla geçmiş olabilir; derinlik sözleşmenin parçası.
     wanted = {f"{year}Q{quarter}" for year, quarter in recent_quarters(quarters)}
@@ -209,6 +282,7 @@ def quarterly(
             "items": {},
             "unitDropped": [],
             "noFactor": [],
+            "annualRestated": [],
             "supported": False,
             "sector": kind,
         }
@@ -226,4 +300,5 @@ def quarterly(
         "items": items,
         "unitDropped": dropped,
         "noFactor": no_factor,
+        "annualRestated": sorted(p for p in restated if p in wanted),
     }
