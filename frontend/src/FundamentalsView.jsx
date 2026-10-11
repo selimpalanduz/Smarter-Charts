@@ -460,6 +460,31 @@ const FUND_CSS = `
   line-height: 1.5;
 }
 .stc-fund-flag svg { flex-shrink: 0; margin-top: 2px; }
+.stc-fund-val {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+.stc-fund-val:last-of-type { border-bottom: none; }
+.stc-fund-val-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11.5px;
+}
+.stc-fund-val-top b {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.stc-fund-val-side {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  min-height: 12px;
+}
 .stc-fund-meta {
   display: flex;
   justify-content: space-between;

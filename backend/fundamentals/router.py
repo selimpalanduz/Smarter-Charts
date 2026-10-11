@@ -15,7 +15,7 @@ rakamı için TÜFE yanlış deflatör olduğundan "usd-real" diye bir şey yok.
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import store, warmer
+from . import store, valuation, warmer
 from .schema import CURRENCY_TRY, CURRENCY_USD
 from .statements import QUARTERS, quarterly
 from .summary import ANNUAL, QUARTER, summarise
@@ -75,6 +75,21 @@ def get_summary(
             symbol, quarters=quarters, real=real, currency=currency, refresh=refresh
         )
         return summarise(statements, period)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/valuation/{symbol}")
+def get_valuation(symbol: str, refresh: bool = False):
+    """
+    The valuation ratios, which take no basis: a ratio is unit-free, so the
+    answer is the same number in lira and in dollars.
+
+    Değerleme rasyoları; taban almıyor: oran birimsiz olduğu için cevap lirada
+    da dolarda da aynı sayı.
+    """
+    try:
+        return valuation.ratios(symbol, refresh=refresh)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 

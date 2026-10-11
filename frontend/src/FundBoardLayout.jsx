@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { SERIES } from './theme.js';
 import { useT } from './i18n.js';
+import { useValuation } from './fundApi.js';
 import { BandBar, BarChart, LineChart } from './FundCharts.jsx';
 import { band, change, FLAT_SCALE, formatCell, num, rowScale } from './fundFormat.js';
 
@@ -85,11 +86,74 @@ function checksFor(rows, str) {
   return out;
 }
 
+// Price-based ratios, fetched on their own: they need the quote and the share
+// count, which the statement endpoint has neither of. They also do not move
+// with the basis toggle, so the basis is not in the request.
+// Fiyata dayalı rasyolar, ayrı çekiliyor: kotasyon ve hisse sayısı
+// gerektiriyor, tablo uç noktasında ikisi de yok. Taban düğmesiyle de
+// değişmediği için istekte taban yok.
+function ValuationCard({ symbol }) {
+  const str = useT();
+  const { data, error, loading } = useValuation(symbol);
+
+  const money = (value) => {
+    if (value == null) return '—';
+    const scale = rowScale([value], str.fundScale);
+    return `${num(value / scale.divisor, str.locale, 1)} ${scale.suffix}`.trim();
+  };
+
+  let body = null;
+  if (loading) body = <p className="stc-fund-card-sub">{str.fundValuationLoading}</p>;
+  else if (error) body = <p className="stc-fund-card-sub">{error}</p>;
+  else if (!data?.supported) return null;
+  else if (!data.priced) body = <p className="stc-fund-card-sub">{str.fundValuationUnpriced}</p>;
+  else {
+    body = (
+      <>
+        <p className="stc-fund-card-sub">{str.fundValuationNote(data.period)}</p>
+        {data.ratios.map((row) => (
+          <div key={row.key} className="stc-fund-val" title={row.note[str.langKey] ?? row.note.tr}>
+            <div className="stc-fund-val-top">
+              <span>{row.label[str.langKey] ?? row.label.tr}</span>
+              <b>{row.value == null ? '—' : `${num(row.value, str.locale, 1)}x`}</b>
+            </div>
+            <div className="stc-fund-val-side">
+              {row.value == null
+                ? (str.fundValuationMissing[row.missing] ?? '')
+                : row.restated != null
+                  ? str.fundValuationRestated(`${num(row.restated, str.locale, 1)}x`)
+                  : ''}
+            </div>
+          </div>
+        ))}
+        <div className="stc-fund-meta" style={{ marginTop: '10px' }}>
+          <span>{str.fundMarketCap}</span>
+          <b>{money(data.marketCap)}</b>
+        </div>
+        <div className="stc-fund-meta">
+          <span>{str.fundEnterpriseValue}</span>
+          <b>{money(data.enterpriseValue)}</b>
+        </div>
+        <p className="stc-fund-card-sub" style={{ margin: '8px 0 0' }}>
+          {str.fundValuationProviderNote}
+        </p>
+      </>
+    );
+  }
+
+  return (
+    <div className="stc-fund-card">
+      <h3>{str.fundValuationTitle}</h3>
+      {body}
+    </div>
+  );
+}
+
 // The scanning view: the four lines a reader opens with as charts, the ratio
 // bands beside them, and the tables folded away until asked for.
 // Tarama görünümü: okurun ilk baktığı dört satır grafik olarak, yanında oran
 // bantları, tablolar istenene kadar katlı.
-export default function FundBoardLayout({ model, summary }) {
+export default function FundBoardLayout({ model, summary, symbol }) {
   const str = useT();
   const { columns, sections, rows, partial, period, basis } = model;
   const [open, setOpen] = useState(sections[0]?.id ?? null);
@@ -237,6 +301,8 @@ export default function FundBoardLayout({ model, summary }) {
       </div>
 
       <div className="stc-fund-rail">
+        <ValuationCard symbol={symbol} />
+
         <div className="stc-fund-card">
           <h3>{str.fundBandTitle}</h3>
           <p className="stc-fund-card-sub">{str.fundBandNote}</p>
@@ -256,7 +322,6 @@ export default function FundBoardLayout({ model, summary }) {
               />
             </div>
           ))}
-          <p className="stc-fund-card-sub" style={{ margin: '4px 0 0' }}>{str.fundValuationSoon}</p>
         </div>
 
         <div className="stc-fund-card">
