@@ -43,6 +43,19 @@ def _previous(period: str) -> str | None:
     return f"{year}Q{int(quarter) - 1}" if int(quarter) > 1 else None
 
 
+# The first year whose Q4 column arrives restated. TMS 29 began with the
+# annual report for 31.12.2023, so 2024 is the earliest year a later
+# inflation-adjusted report restates. Checked against Fintables on THYAO:
+# 2021, 2022 and 2023 come through at a ratio of exactly 1.0000, 2024 and
+# 2025 scaled. Applying the correction below 2024 drives Q4 revenue negative.
+# Q4 kolonu düzeltilmiş gelen ilk yıl. TMS 29, 31.12.2023 yıllık raporuyla
+# başladı; dolayısıyla sonraki bir enflasyon düzeltmeli raporun düzelttiği en
+# erken yıl 2024. THYAO'da Fintables'a karşı kontrol edildi: 2021, 2022 ve
+# 2023 tam 1,0000 oranıyla geliyor, 2024 ve 2025 ölçekli. Düzeltmeyi 2024'ün
+# altına uygulamak Q4 satış gelirini negatife düşürüyor.
+FORWARD_RESTATED_FROM = 2024
+
+
 def _restatement_target(periods: list[str], year: int) -> str | None:
     """
     The month a year's Q4 column arrives in: the period end of the latest
@@ -62,12 +75,14 @@ def _undo_annual_restatement(values: dict[str, dict[str, float]]) -> list[str]:
     Takes the Q4 column back to its own period end, and says which periods
     were moved.
 
-    İş Yatırım serves Q1-Q3 in the money of their own period end, but Q4 in
-    the money of the NEXT report — it is the comparative column as the
-    following year restates it. Verified against Fintables on THYAO: 2024Q4
-    came scaled by TÜFE from 2024-12 to 2025-12 and 2025Q4 from 2025-12 to
-    2026-06, to four decimals, on income, cash flow and balance sheet lines
-    alike, and in both the lira and the dollar presentation.
+    İş Yatırım serves Q1-Q3 in the money of their own period end, but from
+    FORWARD_RESTATED_FROM onwards it serves Q4 in the money of the NEXT
+    report — it is the comparative column as the following year restates it.
+    Verified against Fintables on THYAO: 2024Q4 came scaled by TÜFE from
+    2024-12 to 2025-12 and 2025Q4 from 2025-12 to 2026-06, to four decimals,
+    on income, cash flow and balance sheet lines alike, and in both the lira
+    and the dollar presentation. 2021-2023 matched at exactly 1.0000 and are
+    left alone.
 
     Left alone it inflates every annual figure by a year of inflation, makes
     Q4 (annual less nine months) subtract two different currencies from each
@@ -75,12 +90,14 @@ def _undo_annual_restatement(values: dict[str, dict[str, float]]) -> list[str]:
 
     Q4 kolonunu kendi dönem sonuna geri getirir, taşınan dönemleri döner.
 
-    İş Yatırım Q1-Q3'ü kendi dönem sonunun parasında veriyor, ama Q4'ü BİR
-    SONRAKİ raporun parasında — ertesi yılın düzelttiği karşılaştırma kolonu
-    bu. THYAO'da Fintables'a karşı doğrulandı: 2024Q4 TÜFE ile 2024-12'den
-    2025-12'ye, 2025Q4 ise 2025-12'den 2026-06'ya ölçeklenmiş geliyor; dört
-    ondalık basamağa kadar, gelir tablosu, nakit akım ve bilanço satırlarında
-    aynı şekilde, hem lira hem dolar sunumunda.
+    İş Yatırım Q1-Q3'ü kendi dönem sonunun parasında veriyor, ama
+    FORWARD_RESTATED_FROM'dan itibaren Q4'ü BİR SONRAKİ raporun parasında —
+    ertesi yılın düzelttiği karşılaştırma kolonu bu. THYAO'da Fintables'a
+    karşı doğrulandı: 2024Q4 TÜFE ile 2024-12'den 2025-12'ye, 2025Q4 ise
+    2025-12'den 2026-06'ya ölçeklenmiş geliyor; dört ondalık basamağa kadar,
+    gelir tablosu, nakit akım ve bilanço satırlarında aynı şekilde, hem lira
+    hem dolar sunumunda. 2021-2023 tam 1,0000 oranıyla eşleşti, onlara
+    dokunulmuyor.
 
     Dokunulmazsa her yıllık rakamı bir yıllık enflasyon kadar şişiriyor, Q4'ü
     (yıllık eksi dokuz aylık) iki ayrı paranın birbirinden çıkarılması hâline
@@ -94,7 +111,7 @@ def _undo_annual_restatement(values: dict[str, dict[str, float]]) -> list[str]:
     moved = []
     for period in periods:
         year, quarter = period.split("Q")
-        if quarter != "4":
+        if quarter != "4" or int(year) < FORWARD_RESTATED_FROM:
             continue
         target = _restatement_target(periods, int(year))
         if target is None:
