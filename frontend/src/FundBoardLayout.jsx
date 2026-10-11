@@ -266,7 +266,7 @@ export default function FundBoardLayout({ model, summary, symbol }) {
                   <table>
                     <thead>
                       <tr>
-                        <th style={{ minWidth: '180px' }} />
+                        <th style={{ width: '230px' }} />
                         {columns.map((column) => (
                           <th key={column} className={partial.has(column) ? 'is-partial' : ''}>
                             {column}

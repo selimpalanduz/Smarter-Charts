@@ -67,7 +67,11 @@ function withDerived(sections, str, period) {
       values: leverage,
     });
   }
-  const roe = divide(rows.get('3Z'), rows.get('2N'), 100, period);
+  // Pay ana ortaklık kârı, o yüzden payda da ana ortaklık özkaynağı olmalı;
+  // 2O yoksa toplam özkaynağa düşülüyor.
+  // The numerator is parent profit, so the denominator is parent equity too;
+  // total equity only when 2O is absent.
+  const roe = divide(rows.get('3Z'), rows.get('2O') ?? rows.get('2N'), 100, period);
   if (roe && roe.some((v) => v != null)) {
     const name = mark(str.fundRoe);
     extra.push({
@@ -232,11 +236,23 @@ const FUND_CSS = `
   margin: 0 0 8px;
 }
 .stc-fund-scroll { overflow-x: auto; }
+/* Fixed geometry, so every section's year columns land on the same x. With
+   the natural layout each table sized its first column to its own longest
+   label and the sections drifted out of line.
+   Sabit geometri; her bölümün yıl kolonları aynı x'e düşsün. Doğal yerleşimde
+   her tablo ilk kolonunu kendi en uzun satır adına göre ölçüyor ve bölümler
+   birbirinden kayıyordu. */
 .stc-fund table {
   width: 100%;
+  min-width: 760px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
+}
+.stc-fund tbody th {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .stc-fund th, .stc-fund td {
   padding: 5px 10px;

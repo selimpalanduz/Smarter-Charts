@@ -55,14 +55,17 @@ export default function FundTableLayout({ model }) {
             <table>
               <thead>
                 <tr>
-                  <th style={{ minWidth: '190px' }} />
+                  <th style={{ width: '230px' }} />
                   {columns.map((column) => (
                     <th key={column} className={partial.has(column) ? 'is-partial' : ''}>
                       {column}
                     </th>
                   ))}
-                  <th style={{ width: '96px', textAlign: 'center' }}>{str.fundTrend}</th>
-                  <th style={{ width: '84px' }}>{str.fundWindow(columns.length - 1)}</th>
+                  <th style={{ width: '92px', textAlign: 'center' }}>{str.fundTrend}</th>
+                  {/* Wide enough for the Turkish "+24,4 puan"; the English
+                      equivalent is shorter.
+                      Türkçe "+24,4 puan" sığacak kadar; İngilizcesi daha kısa. */}
+                  <th style={{ width: '104px' }}>{str.fundWindow(columns.length - 1)}</th>
                 </tr>
               </thead>
               <tbody>

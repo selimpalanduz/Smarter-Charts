@@ -50,6 +50,11 @@ SECTIONS = [
             {"derived": "financialDebt", "label": {"tr": "Finansal Borçlar", "en": "Financial Debt"}},
             {"derived": "netDebt", "label": {"tr": "Net Borç", "en": "Net Debt"}},
             {"code": "2N", "label": {"tr": "Özkaynaklar", "en": "Equity"}},
+            # Minority interests out. Paired with 3Z, which is also parent-only,
+            # so a return on equity divides like with like.
+            # Azınlık payları hariç. Yine yalnızca ana ortaklığı gösteren 3Z ile
+            # eşleşiyor, böylece özkaynak kârlılığı aynı cinsi bölüyor.
+            {"code": "2O", "label": {"tr": "Özkaynak (Ana Ortaklık)", "en": "Equity (Parent)"}},
         ],
     },
     {
