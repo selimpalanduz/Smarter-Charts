@@ -390,6 +390,22 @@ const FUND_CSS = `
 .stc-fund-tip-label { font-size: 10px; color: var(--text-dim); }
 .stc-fund-tip-value { font-size: 13px; font-weight: 600; color: var(--text-strong); }
 .stc-fund-tip-delta { font-size: 10.5px; }
+.stc-fund-tip-left { right: auto; left: 0; }
+.stc-fund-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.stc-fund-tip-row i {
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  flex: none;
+}
+.stc-fund-tip-row b { margin-left: auto; color: var(--text-strong); font-weight: 600; }
 .stc-fund-legend {
   display: flex;
   gap: 14px;

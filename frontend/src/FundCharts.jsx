@@ -47,6 +47,25 @@ function Tooltip({ label, value, delta, deltaUp }) {
   );
 }
 
+// One row per line, in the plot's own order, so the colours in the box match
+// the colours on the chart.
+// Her çizgi için bir satır, grafiğin kendi sırasında; kutudaki renkler
+// grafikteki renklerle aynı.
+function SeriesTooltip({ label, rows, side }) {
+  return (
+    <div className={`stc-fund-tip${side === 'left' ? ' stc-fund-tip-left' : ''}`}>
+      <div className="stc-fund-tip-label">{label}</div>
+      {rows.map((row) => (
+        <div key={row.name} className="stc-fund-tip-row">
+          <i style={{ background: row.color }} />
+          <span>{row.name}</span>
+          <b>{row.value}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const PLOT_H = 132;
 const PLOT_W = 320;
 
@@ -151,12 +170,31 @@ export function BarChart({ values, columns, format, refValue, height = PLOT_H, w
 }
 
 export function LineChart({ series, columns, format, height = PLOT_H, width: fallback = PLOT_W, label, reference }) {
+  const [hover, setHover] = useState(null);
   const [ref, width] = useWidth(fallback);
   const all = series.flatMap((s) => s.values);
   const axis = scaleOf(all, height);
   const plotWidth = width - 52;
   const x = (i) => (i / Math.max(columns.length - 1, 1)) * plotWidth;
   const ticks = columns.length > 10 ? columns.map((c, i) => (i % 2 ? '' : c)) : columns;
+
+  // The nearest period wins, not the one to the left: between two points the
+  // cursor is read as asking about whichever is closer.
+  // En yakın dönem kazanıyor, soldaki değil: iki nokta arasında imleç hangisine
+  // yakınsa onu soruyor sayılıyor.
+  const pick = (event) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    const steps = Math.max(columns.length - 1, 1);
+    const at = Math.round(((event.clientX - box.left) / plotWidth) * steps);
+    setHover(Math.min(Math.max(at, 0), columns.length - 1));
+  };
+
+  const rows =
+    hover == null
+      ? []
+      : series
+          .filter((s) => s.values[hover] != null)
+          .map((s) => ({ name: s.name, color: s.color, value: format(s.values[hover]) }));
 
   // Direct labels carry the identity, so they are pushed apart when two series
   // end close together rather than being dropped.
@@ -222,20 +260,50 @@ export function LineChart({ series, columns, format, height = PLOT_H, width: fal
             </text>
           </g>
         ))}
+        {hover != null && (
+          <g>
+            <line x1={x(hover)} y1="0" x2={x(hover)} y2={height} stroke="var(--separator-hover)" strokeWidth="1" />
+            {series.map((s) =>
+              s.values[hover] == null ? null : (
+                <circle
+                  key={`h-${s.name}`}
+                  cx={x(hover)}
+                  cy={axis.y(s.values[hover])}
+                  r="3.5"
+                  fill={s.color}
+                  stroke="var(--panel-bg)"
+                  strokeWidth="1.5"
+                />
+              ),
+            )}
+          </g>
+        )}
         {columns.map((c, i) => (
           <text
             key={`t-${c}`}
             x={x(i)}
             y={height + 14}
             textAnchor="middle"
-            fill="var(--text-dim)"
+            fill={hover === i ? 'var(--text-strong)' : 'var(--text-dim)'}
             fontSize="9.5"
             className="stc-mono"
           >
             {ticks[i]}
           </text>
         ))}
+        <rect
+          x="0"
+          y="0"
+          width={Math.max(plotWidth, 1)}
+          height={height}
+          fill="transparent"
+          onMouseMove={pick}
+          onMouseLeave={() => setHover(null)}
+        />
       </svg>
+      {rows.length > 0 && (
+        <SeriesTooltip label={columns[hover]} rows={rows} side={hover > columns.length / 2 ? 'left' : undefined} />
+      )}
       <div className="stc-fund-legend">
         {series.map((s) => (
           <span key={s.name}>
