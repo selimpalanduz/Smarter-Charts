@@ -54,6 +54,24 @@ def _previous(period: str) -> str | None:
 # kolonları ölçeksiz geliyor.
 TMS29_FROM = "2023Q4"
 
+# İş Yatırım serves the annual column scaled even for a company that restates
+# nothing itself, but only from the 2025 reports on. ENKAI, which reports in
+# dollars and is outside TMS 29, comes through at exactly 1.0000 everywhere
+# except 2024Q4 and 2025Q4, which carry TÜFE 2024-12 -> 2025-12 and
+# 2025-12 -> 2026-06. THYAO behaves the same.
+# İş Yatırım yıllık kolonu, kendisi hiçbir şeyi düzeltmeyen şirkette bile
+# ölçekli veriyor, ama yalnızca 2025 raporlarından itibaren. Dolar raporlayan
+# ve TMS 29 dışında olan ENKAI, 2024Q4 ve 2025Q4 hariç her yerde tam 1,0000
+# geliyor; bu ikisi TÜFE'nin 2024-12 -> 2025-12 ve 2025-12 -> 2026-06
+# çarpanlarını taşıyor. THYAO da aynı.
+PROVIDER_ANNUAL_FROM = "2025Q1"
+
+# The lines the functional currency test reads. Large, present in every
+# non-financial statement, and each one scales with the others.
+# Fonksiyonel para birimi testinin okuduğu satırlar. Büyük, her sanayi
+# tablosunda var ve hepsi birlikte ölçekleniyor.
+_PROBE_CODES = (REVENUE, "3CA", "3D")
+
 
 def _period_key(period: str) -> tuple[int, int]:
     year, quarter = period.split("Q")
@@ -66,7 +84,9 @@ def _mid_month(period: str) -> str:
     return f"{year}-{quarter * 3 - 1:02d}"
 
 
-def _restatement_source(periods: list[str], period: str, kind: str = FLOW) -> str | None:
+def _restatement_source(
+    periods: list[str], period: str, kind: str = FLOW, restates: bool = True
+) -> str | None:
     """
     The report a column is served from: the latest one that carries `period`
     as a comparative, or None when nothing later carries it and the column is
@@ -111,10 +131,241 @@ def _restatement_source(periods: list[str], period: str, kind: str = FLOW) -> st
     # ve kendi parasında kalıyor. KCHOL'de Fintables'a karşı kontrol edildi:
     # nakit 2024Q2, 2024Q3, 2025Q1 ve 2025Q2'de tam 1,0000 oranıyla geliyor,
     # aynı şirketin satış kolonlarının hepsi ölçekliyken.
-    if kind != FLOW:
+    if kind != FLOW or not restates:
         return None
     same = f"{year + 1}Q{quarter}"
     return same if _period_key(same) <= _period_key(latest) else None
+
+
+# Closing cash as the cash flow statement states it, and cash as the balance
+# sheet states it: the same money on the same day, reached through two
+# statements that are not carried forward alike.
+# Nakit akım tablosunun yazdığı dönem sonu nakit ile bilançonun yazdığı nakit:
+# aynı gün aynı para, ama ileriye taşınışı farklı olan iki tablodan.
+_CASH_FLOW_CLOSING = "4CBL"
+_BALANCE_SHEET_CASH = "1AA"
+
+# How close the readings must sit to an answer, and how much further from the
+# other one, for the cash test to be trusted; and how far below one a nine
+# month figure must fall to prove the earlier columns were scaled.
+# Nakit testine güvenilmesi için okumaların bir cevaba ne kadar yakın, diğerine
+# kaç kat uzak durması gerektiği; ve dokuz aylık rakamın, önceki kolonların
+# ölçeklendiğini kanıtlaması için birin ne kadar altına düşmesi gerektiği.
+_CASH_TEST_FIT = 0.15
+_CASH_TEST_MARGIN = 3.0
+_BACKWARDS = 0.98
+
+
+def _carried(periods: list[str], period: str) -> bool:
+    """Whether a later report carries this quarter as its comparative."""
+    year, quarter = _period_key(period)
+    if quarter == 4:
+        return True
+    latest = max(periods, key=_period_key)
+    return _period_key(f"{year + 1}Q{quarter}") <= _period_key(latest)
+
+
+def _restates_comparatives(
+    values: dict[str, dict[str, float]], periods: list[str], index: dict[str, float]
+) -> bool:
+    """
+    Whether the company restates its comparative figures for inflation.
+
+    A company whose functional currency is not the lira — THYAO, ENKAI,
+    EREGL, PGSUS, TAVHL, the Borusan companies — is outside TMS 29 and serves
+    every interim column exactly as it first published it. A company inside
+    TMS 29 serves it as the following year's report restates it, a year of
+    TÜFE higher. Nothing in the feed says which, so it is read off the
+    figures, by three tests in order of how much they can prove.
+
+    Closing cash appears twice in the same report: at the foot of the cash
+    flow statement and on the balance sheet. The two are the same money, but
+    an interim balance sheet is never carried into a later report while the
+    cash flow statement is, so dividing one by the other leaves the scaling
+    on its own. Quarters a later report carries are compared with quarters
+    nothing carries, so a company whose two cash lines simply differ cancels
+    out. Where they do not even hold a steady relation the reading is thrown
+    away.
+
+    Before that, one thing settles the question outright: cumulative revenue
+    cannot shrink as a year goes on. Where the nine month column comes in
+    under the six month one, the earlier columns must have been scaled.
+
+    Left over are the few where cash is unusable and revenue runs forward
+    cleanly. For those the annual column is the anchor — it is scaled either
+    way — and the annual-to-nine-month ratio of the newest complete year,
+    whose nine month column nothing carries yet, is compared with the year
+    before it, cancelling the company's own seasonality.
+
+    Şirketin karşılaştırma rakamlarını enflasyona göre düzeltip düzeltmediği.
+
+    Fonksiyonel para birimi lira olmayan şirket — THYAO, ENKAI, EREGL,
+    PGSUS, TAVHL, Borusan şirketleri — TMS 29 dışında ve her ara kolonu ilk
+    yayımladığı gibi veriyor. TMS 29 içindeki şirket ise ertesi yılın
+    raporunun düzelttiği gibi, bir yıllık TÜFE kadar yüksek. Veride bunu
+    söyleyen alan yok; rakamlardan, kanıtlama gücüne göre sıralı üç testle
+    okunuyor.
+
+    Dönem sonu nakit aynı raporda iki kez geçiyor: nakit akım tablosunun
+    altında ve bilançoda. İkisi aynı para, ama ara bilanço sonraki bir rapora
+    hiç taşınmıyor, nakit akım tablosu taşınıyor; birini diğerine bölünce
+    geriye yalnız ölçek kalıyor. Sonraki raporun taşıdığı çeyrekler, hiçbir
+    raporun taşımadığı çeyreklerle karşılaştırılıyor, böylece iki nakit satırı
+    birbirini tutmayan şirkette fark sadeleşiyor. Aralarında istikrarlı bir
+    ilişki bile yoksa okuma atılıyor.
+
+    Ondan önce bir şey soruyu kesin kapatıyor: birikimli satış geliri yıl
+    ilerledikçe küçülemez. Dokuz aylık kolon altı aylığın altında kalıyorsa
+    önceki kolonlar ölçeklenmiş demektir.
+
+    Geriye nakitin kullanılamadığı ve gelirin düzgün ilerlediği birkaç şirket
+    kalıyor. Onlarda çıpa yıllık kolon — iki durumda da ölçekli — ve dokuz
+    aylık kolonunu henüz hiçbir raporun taşımadığı en yeni tam yılın
+    yıllık/dokuz aylık oranı bir önceki yılınkiyle karşılaştırılıyor; şirketin
+    kendi mevsimselliği böylece sadeleşiyor.
+    """
+    revenue = values.get(REVENUE) or {}
+    for year in sorted({_period_key(p)[0] for p in periods}, reverse=True):
+        half, nine = revenue.get(f"{year}Q2"), revenue.get(f"{year}Q3")
+        if half and nine and half > 0:
+            if nine / half < _BACKWARDS:
+                return True
+            break
+
+    closing = values.get(_CASH_FLOW_CLOSING) or {}
+    balance = values.get(_BALANCE_SHEET_CASH) or {}
+    carried, loose = [], []
+    for period in periods:
+        # Only the stretch where a carried column would be scaled at all;
+        # before that every reading is a one and tells nothing apart.
+        # Yalnızca taşınan kolonun ölçekleneceği aralık; öncesinde her okuma
+        # bir çıkıyor ve hiçbir şeyi ayırmıyor.
+        if _period_key(period)[1] == 4 or _period_key(_same_quarter_after(period)) < _period_key(TMS29_FROM):
+            continue
+        above, below = closing.get(period), balance.get(period)
+        if not above or not below or below <= 0:
+            continue
+        (carried if _carried(periods, period) else loose).append((period, above / below))
+    if carried and loose:
+        # Each carried quarter expects its own factor, so the two answers are
+        # fitted separately and the closer one wins — but only if it actually
+        # fits and the other one plainly does not.
+        # Taşınan her çeyreğin beklediği çarpan farklı; o yüzden iki cevap ayrı
+        # ayrı deneniyor ve yakın olan kazanıyor — ama ancak gerçekten
+        # oturuyorsa ve diğeri açıkça oturmuyorsa.
+        base = _median([value for _, value in loose])
+        restated, untouched = [], []
+        for period, value in carried:
+            expected = inflation.factor(
+                period, inflation.quarter_end_month(_same_quarter_after(period)), index
+            )
+            if not expected or not base:
+                continue
+            restated.append(abs(value / (base * expected) - 1))
+            untouched.append(abs(value / base - 1))
+        if restated:
+            fits, against = _median(restated), _median(untouched)
+            better, worse = min(fits, against), max(fits, against)
+            if better <= _CASH_TEST_FIT and worse >= better * _CASH_TEST_MARGIN:
+                return fits < against
+
+    return _restates_by_season(values, periods, index)
+
+
+def _same_quarter_after(period: str) -> str:
+    year, quarter = _period_key(period)
+    return f"{year + 1}Q{quarter}"
+
+
+def _median(numbers: list[float]) -> float:
+    ordered = sorted(numbers)
+    return ordered[len(ordered) // 2]
+
+
+
+
+def _restates_by_season(
+    values: dict[str, dict[str, float]], periods: list[str], index: dict[str, float]
+) -> bool:
+    """
+    Whether the company restates its comparative figures for inflation.
+
+    A company whose functional currency is not the lira — THYAO, ENKAI,
+    EREGL, PGSUS, TAVHL — is outside TMS 29 and serves every interim column
+    exactly as it first published it. A company inside TMS 29 serves it as
+    the following year's report restates it, a year of TÜFE higher. Nothing
+    in the feed says which, so it is read off the figures.
+
+    The newest complete year has no following report to carry its nine month
+    column, so that column is raw for everybody; the year before it does.
+    Comparing the two years' annual-to-nine-month ratio therefore cancels the
+    company's own seasonality and leaves the scaling: a restating company
+    lands near one over a year of TÜFE, one that does not lands near one. The
+    annual column is the common anchor because it arrives scaled either way.
+
+    Şirketin karşılaştırma rakamlarını enflasyona göre düzeltip düzeltmediği.
+
+    Fonksiyonel para birimi lira olmayan şirket — THYAO, ENKAI, EREGL,
+    PGSUS, TAVHL — TMS 29 dışında ve her ara kolonu ilk yayımladığı gibi
+    veriyor. TMS 29 içindeki şirket ise ertesi yılın raporunun düzelttiği
+    gibi, bir yıllık TÜFE kadar yüksek veriyor. Veride bunu söyleyen bir alan
+    yok, o yüzden rakamlardan okunuyor.
+
+    En yeni tam yılın dokuz aylık kolonunu taşıyacak bir sonraki rapor henüz
+    yok, yani o kolon herkeste ham; bir önceki yılınki taşınıyor. İki yılın
+    yıllık/dokuz aylık oranını karşılaştırmak şirketin kendi mevsimselliğini
+    sadeleştirip geriye ölçeği bırakıyor: düzelten şirket bir yıllık TÜFE'nin
+    tersine, düzeltmeyen bire yakın çıkıyor. Ortak çıpa yıllık kolon, çünkü
+    o iki durumda da ölçekli geliyor.
+    """
+    latest = max(periods, key=_period_key)
+    years = sorted({_period_key(p)[0] for p in periods}, reverse=True)
+
+    control = next(
+        (
+            year
+            for year in years
+            if f"{year}Q3" in periods
+            and f"{year}Q4" in periods
+            and _period_key(f"{year + 1}Q3") > _period_key(latest)
+        ),
+        None,
+    )
+    if control is None or f"{control - 1}Q3" not in periods or f"{control - 1}Q4" not in periods:
+        return True
+
+    test = control - 1
+    carried = inflation.factor(f"{test}Q3", inflation.quarter_end_month(f"{control}Q3"), index)
+    if not carried or carried <= 1:
+        return True
+
+    ratios = []
+    for year in (test, control):
+        source = _restatement_source(periods, f"{year}Q4")
+        annual = inflation.factor(f"{year}Q4", inflation.quarter_end_month(source), index) if source else None
+        if not annual:
+            return True
+        ratios.append((year, annual))
+
+    scores = []
+    for code in _PROBE_CODES:
+        series = values.get(code) or {}
+        pair = []
+        for year, annual in ratios:
+            nine, twelve = series.get(f"{year}Q3"), series.get(f"{year}Q4")
+            if not nine or not twelve or (nine > 0) != (twelve > 0):
+                break
+            pair.append((twelve / annual) / nine)
+        if len(pair) == 2 and pair[1]:
+            scores.append(pair[0] / pair[1])
+    if not scores:
+        return True
+
+    scores.sort()
+    middle = scores[len(scores) // 2]
+    # Halfway between the two outcomes the test can produce.
+    # Testin üretebileceği iki sonucun tam ortası.
+    return middle < (1 / carried + 1) / 2
 
 
 def _undo_forward_restatement(values: dict[str, dict[str, float]]) -> list[str]:
@@ -175,11 +426,18 @@ def _undo_forward_restatement(values: dict[str, dict[str, float]]) -> list[str]:
     if not index:
         return []
 
+    restates = _restates_comparatives(values, periods, index)
+    # A company that restates nothing of its own still has its annual column
+    # scaled by the provider, but only from the 2025 reports on.
+    # Kendi hiçbir şeyini düzeltmeyen şirketin yıllık kolonu yine de sağlayıcı
+    # tarafından ölçekleniyor, ama yalnızca 2025 raporlarından itibaren.
+    floor = TMS29_FROM if restates else PROVIDER_ANNUAL_FROM
+
     moved = []
     for period in periods:
         for kind in (FLOW, STOCK):
-            source = _restatement_source(periods, period, kind)
-            if source is None or _period_key(source) < _period_key(TMS29_FROM):
+            source = _restatement_source(periods, period, kind, restates)
+            if source is None or _period_key(source) < _period_key(floor):
                 continue
             factor = inflation.factor(period, inflation.quarter_end_month(source), index)
             if not factor or factor <= 1:
