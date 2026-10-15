@@ -276,6 +276,23 @@ const FUND_CSS = `
   text-align: right;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
 }
+/* The row name stays put while the quarters scroll, and a rule marks where
+   one year ends and the next begins — the two things a reader loses when the
+   table is wider than the screen. Colour is left alone: the ratio rows
+   already carry a heat tint and a negative number is already red.
+   Satır adı çeyrekler kayarken yerinde duruyor ve bir çizgi bir yılın bittiği
+   yeri işaretliyor — tablo ekrandan genişken okurun kaybettiği iki şey bu.
+   Renge dokunulmuyor: oran satırlarında zaten ısı tonu var ve eksi rakam
+   zaten kırmızı. */
+.stc-fund thead th:first-child,
+.stc-fund tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--panel-border);
+}
+.stc-fund .is-year-start { border-left: 1px solid var(--separator-hover); }
 .stc-fund tbody tr:hover th,
 .stc-fund tbody tr:hover td { background: var(--btn-bg); }
 .stc-fund .is-neg { color: var(--down); }

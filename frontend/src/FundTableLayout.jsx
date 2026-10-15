@@ -20,6 +20,15 @@ export default function FundTableLayout({ model }) {
   const suffixes = { pp: str.fundPp };
 
   const kpis = KPI_KEYS.map((key) => rows.get(key)).filter(Boolean);
+  // Where a new year starts, so four quarters read as one block. In the annual
+  // view every column is a year and a rule on each one would be noise.
+  // Yeni yılın başladığı yer; dört çeyrek tek blok olarak okunsun. Yıllık
+  // görünümde her kolon bir yıl, hepsine çizgi koymak gürültü olurdu.
+  const yearStarts = new Set(
+    period === 'quarter'
+      ? columns.filter((column, i) => i > 0 && column.slice(0, 4) !== columns[i - 1].slice(0, 4))
+      : [],
+  );
 
   return (
     <>
@@ -57,7 +66,12 @@ export default function FundTableLayout({ model }) {
                 <tr>
                   <th style={{ width: '230px' }} />
                   {columns.map((column) => (
-                    <th key={column} className={partial.has(column) ? 'is-partial' : ''}>
+                    <th
+                      key={column}
+                      className={[partial.has(column) ? 'is-partial' : '', yearStarts.has(column) ? 'is-year-start' : '']
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
                       {column}
                     </th>
                   ))}
@@ -82,7 +96,12 @@ export default function FundTableLayout({ model }) {
                       {row.values.map((value, i) => (
                         <td
                           key={columns[i]}
-                          className={value != null && value < 0 ? 'is-neg' : ''}
+                          className={[
+                            value != null && value < 0 ? 'is-neg' : '',
+                            yearStarts.has(columns[i]) ? 'is-year-start' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
                           style={ratio ? { background: tintFor(value, row.values) } : undefined}
                         >
                           {formatCell(value, row.unit, scale, str.locale)}
