@@ -29,6 +29,11 @@ export default function FundTableLayout({ model }) {
       ? columns.filter((column, i) => i > 0 && column.slice(0, 4) !== columns[i - 1].slice(0, 4))
       : [],
   );
+  // Half year, dashed: the same landmark one level down.
+  // Yarıyıl, kesikli: aynı işaret bir alt kademede.
+  const halfStarts = new Set(
+    period === 'quarter' ? columns.filter((column, i) => i > 0 && column.endsWith('Q3')) : [],
+  );
 
   return (
     <>
@@ -68,7 +73,11 @@ export default function FundTableLayout({ model }) {
                   {columns.map((column) => (
                     <th
                       key={column}
-                      className={[partial.has(column) ? 'is-partial' : '', yearStarts.has(column) ? 'is-year-start' : '']
+                      className={[
+                        partial.has(column) ? 'is-partial' : '',
+                        yearStarts.has(column) ? 'is-year-start' : '',
+                        halfStarts.has(column) ? 'is-half-start' : '',
+                      ]
                         .filter(Boolean)
                         .join(' ')}
                     >
@@ -99,6 +108,7 @@ export default function FundTableLayout({ model }) {
                           className={[
                             value != null && value < 0 ? 'is-neg' : '',
                             yearStarts.has(columns[i]) ? 'is-year-start' : '',
+                            halfStarts.has(columns[i]) ? 'is-half-start' : '',
                           ]
                             .filter(Boolean)
                             .join(' ')}

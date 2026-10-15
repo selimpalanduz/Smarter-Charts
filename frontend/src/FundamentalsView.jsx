@@ -293,6 +293,7 @@ const FUND_CSS = `
   border-right: 1px solid var(--panel-border);
 }
 .stc-fund .is-year-start { border-left: 1px solid var(--separator-hover); }
+.stc-fund .is-half-start { border-left: 1px dashed var(--separator-hover); }
 .stc-fund tbody tr:hover th,
 .stc-fund tbody tr:hover td { background: var(--btn-bg); }
 .stc-fund .is-neg { color: var(--down); }
