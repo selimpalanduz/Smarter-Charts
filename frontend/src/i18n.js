@@ -186,7 +186,7 @@ export const STRINGS = {
     fundTitle: 'Financial Statements',
     fundBasis: 'Reporting basis',
     fundPeriod: 'Period',
-    fundBasisLabel: { 'try-real': 'TRY real', 'try-nominal': 'TRY nominal', usd: 'USD' },
+    fundBasisLabel: { 'try-real': 'TRY real', 'try-nominal': 'TRY as reported', usd: 'USD' },
     fundBasisHint: {
       'try-real': 'Every figure restated in one month’s money, so years are comparable.',
       'try-nominal': 'As reported. Years are not comparable: inflation accounting applies from the 2023 annual report onward.',
@@ -448,7 +448,7 @@ export const STRINGS = {
     fundTitle: 'Mali Tablolar',
     fundBasis: 'Raporlama tabanı',
     fundPeriod: 'Dönem',
-    fundBasisLabel: { 'try-real': 'TL reel', 'try-nominal': 'TL nominal', usd: 'USD' },
+    fundBasisLabel: { 'try-real': 'TL reel', 'try-nominal': 'TL raporlandığı gibi', usd: 'USD' },
     fundBasisHint: {
       'try-real': 'Her rakam tek bir ayın parasına çevrildi, yıllar karşılaştırılabilir.',
       'try-nominal': 'Raporlandığı gibi. Yıllar karşılaştırılamaz: enflasyon muhasebesi 2023 yıllık raporundan itibaren uygulanıyor.',
