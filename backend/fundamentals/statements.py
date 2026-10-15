@@ -26,6 +26,7 @@ from .schema import (
     CURRENCY_USD,
     FLOW,
     REVENUE,
+    STOCK,
     UNIT_UNSTABLE,
     item_kind,
 )
@@ -65,7 +66,7 @@ def _mid_month(period: str) -> str:
     return f"{year}-{quarter * 3 - 1:02d}"
 
 
-def _restatement_source(periods: list[str], period: str) -> str | None:
+def _restatement_source(periods: list[str], period: str, kind: str = FLOW) -> str | None:
     """
     The report a column is served from: the latest one that carries `period`
     as a comparative, or None when nothing later carries it and the column is
@@ -97,6 +98,21 @@ def _restatement_source(periods: list[str], period: str) -> str | None:
         return None
     if quarter == 4:
         return latest if _period_key(latest)[0] == year + 1 else f"{year + 1}Q4"
+    # Only the income statement and the cash flow. An interim report compares
+    # its balance sheet with the previous YEAR END, not with the same quarter
+    # a year ago, so a first, second or third quarter balance sheet is never
+    # carried by a later report and stays in its own money. Checked against
+    # Fintables on KCHOL: cash at 2024Q2, 2024Q3, 2025Q1 and 2025Q2 comes
+    # through at a ratio of exactly 1.0000 while the same company's revenue
+    # columns are all scaled.
+    # Yalnızca gelir tablosu ve nakit akım. Ara rapor bilançosunu geçen yılın
+    # aynı çeyreğiyle değil bir önceki YIL SONUYLA karşılaştırıyor, o yüzden
+    # birinci, ikinci ve üçüncü çeyrek bilançosunu sonraki bir rapor taşımıyor
+    # ve kendi parasında kalıyor. KCHOL'de Fintables'a karşı kontrol edildi:
+    # nakit 2024Q2, 2024Q3, 2025Q1 ve 2025Q2'de tam 1,0000 oranıyla geliyor,
+    # aynı şirketin satış kolonlarının hepsi ölçekliyken.
+    if kind != FLOW:
+        return None
     same = f"{year + 1}Q{quarter}"
     return same if _period_key(same) <= _period_key(latest) else None
 
@@ -161,16 +177,18 @@ def _undo_forward_restatement(values: dict[str, dict[str, float]]) -> list[str]:
 
     moved = []
     for period in periods:
-        source = _restatement_source(periods, period)
-        if source is None or _period_key(source) < _period_key(TMS29_FROM):
-            continue
-        factor = inflation.factor(period, inflation.quarter_end_month(source), index)
-        if not factor or factor <= 1:
-            continue
-        for series in values.values():
-            if period in series:
-                series[period] /= factor
-        moved.append(period)
+        for kind in (FLOW, STOCK):
+            source = _restatement_source(periods, period, kind)
+            if source is None or _period_key(source) < _period_key(TMS29_FROM):
+                continue
+            factor = inflation.factor(period, inflation.quarter_end_month(source), index)
+            if not factor or factor <= 1:
+                continue
+            for code, series in values.items():
+                if period in series and item_kind(code) == kind:
+                    series[period] /= factor
+            if period not in moved:
+                moved.append(period)
     return moved
 
 
