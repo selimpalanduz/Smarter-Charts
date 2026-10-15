@@ -8,10 +8,10 @@ period ending 31.12.2023) because each report restates everything to its own
 reporting date. One rule therefore covers the whole series — scale by TÜFE
 from the period end to a common month.
 
-That holds only because statements._undo_annual_restatement has already run:
-İş Yatırım serves the Q4 column in the following report's money, not its
-own. Scaling it here without that step would count a year of inflation
-twice.
+That holds only because statements._undo_forward_restatement has already
+run: İş Yatırım serves each column in the money of the latest report
+carrying it, not its own. Scaling it here without that step would count a
+year of inflation twice.
 
 The index is chained from monthly rates rather than read as a level: TCMB's
 calculator does return a level but answers 500 for some date pairs. Only
@@ -26,10 +26,10 @@ satırlar para o zaman kazanıldığı için, enflasyon düzeltmeli satırlar (T
 rapor her şeyi kendi raporlama tarihine çevirdiği için. Dolayısıyla tüm seri
 için tek kural yeterli — dönem sonundan ortak bir aya TÜFE ile ölçekle.
 
-Bu ancak statements._undo_annual_restatement çalıştıktan sonra geçerli: İş
-Yatırım Q4 kolonunu kendi parasında değil bir sonraki raporun parasında
-veriyor. O adım olmadan burada ölçeklemek bir yıllık enflasyonu iki kez
-saymak olur.
+Bu ancak statements._undo_forward_restatement çalıştıktan sonra geçerli: İş
+Yatırım her kolonu kendi parasında değil, onu taşıyan en son raporun
+parasında veriyor. O adım olmadan burada ölçeklemek bir yıllık enflasyonu
+iki kez saymak olur.
 
 Endeks seviye olarak okunmuyor, aylık oranlardan zincirleniyor: TCMB'nin
 hesaplayıcısı seviye veriyor ama bazı tarih çiftlerinde 500 dönüyor. Yalnızca

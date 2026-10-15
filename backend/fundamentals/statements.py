@@ -43,65 +43,110 @@ def _previous(period: str) -> str | None:
     return f"{year}Q{int(quarter) - 1}" if int(quarter) > 1 else None
 
 
-# The first year whose Q4 column arrives restated. TMS 29 began with the
-# annual report for 31.12.2023, so 2024 is the earliest year a later
-# inflation-adjusted report restates. Checked against Fintables on THYAO:
-# 2021, 2022 and 2023 come through at a ratio of exactly 1.0000, 2024 and
-# 2025 scaled. Applying the correction below 2024 drives Q4 revenue negative.
-# Q4 kolonu düzeltilmiş gelen ilk yıl. TMS 29, 31.12.2023 yıllık raporuyla
-# başladı; dolayısıyla sonraki bir enflasyon düzeltmeli raporun düzelttiği en
-# erken yıl 2024. THYAO'da Fintables'a karşı kontrol edildi: 2021, 2022 ve
-# 2023 tam 1,0000 oranıyla geliyor, 2024 ve 2025 ölçekli. Düzeltmeyi 2024'ün
-# altına uygulamak Q4 satış gelirini negatife düşürüyor.
-FORWARD_RESTATED_FROM = 2024
+# The first inflation-adjusted report (TMS 29, mandatory from the annual
+# report for the period ending 31.12.2023). A column is only moved when the
+# report it is served from is itself adjusted: the comparatives in the
+# nominal reports before it arrive unscaled.
+# İlk enflasyon düzeltmeli rapor (TMS 29, 31.12.2023'te sona eren dönemin
+# yıllık raporundan itibaren zorunlu). Bir kolon, ancak servis edildiği rapor
+# da düzeltmeliyse taşınıyor: ondan önceki nominal raporların karşılaştırma
+# kolonları ölçeksiz geliyor.
+TMS29_FROM = "2023Q4"
 
 
-def _restatement_target(periods: list[str], year: int) -> str | None:
+def _period_key(period: str) -> tuple[int, int]:
+    year, quarter = period.split("Q")
+    return int(year), int(quarter)
+
+
+def _restatement_source(periods: list[str], period: str) -> str | None:
     """
-    The month a year's Q4 column arrives in: the period end of the latest
-    report filed the following year. None when that year has filed nothing
-    yet, in which case the column is still in its own money.
+    The report a column is served from: the latest one that carries `period`
+    as a comparative, or None when nothing later carries it and the column is
+    still in its own money.
 
-    Bir yılın Q4 kolonunun geldiği ay: ertesi yıl açıklanan en son raporun
-    dönem sonu. O yıl henüz bir şey açıklamadıysa None; o durumda kolon hâlâ
-    kendi parasında.
+    An interim report's comparative income statement is the same period of
+    the previous year, so Q1-Q3 are carried by that one report. Its
+    comparative balance sheet is the previous YEAR END instead, which makes
+    the Q4 column a comparative in every interim report of the following
+    year; it arrives in the money of the latest of them.
+
+    Bir kolonun servis edildiği rapor: `period`'u karşılaştırma kolonu olarak
+    taşıyan en son rapor; daha sonrası taşımıyorsa None ve kolon kendi
+    parasında.
+
+    Ara raporun karşılaştırmalı gelir tablosu geçen yılın aynı dönemi, o
+    yüzden Q1-Q3'ü tek bir rapor taşıyor. Karşılaştırmalı bilançosu ise bir
+    önceki YIL SONU; bu da Q4 kolonunu ertesi yılın her ara raporunda
+    karşılaştırma kolonu yapıyor, kolon da bunların en sonuncusunun parasında
+    geliyor.
     """
-    later = [p for p in periods if int(p.split("Q")[0]) == year + 1]
-    return inflation.quarter_end_month(max(later)) if later else None
+    year, quarter = _period_key(period)
+    # The last report we hold, rather than the presence of one column: a
+    # single failed request would otherwise leave a whole year unscaled.
+    # Elimizdeki en son rapor; tek bir kolonun varlığı değil: aksi hâlde
+    # başarısız tek bir istek bir yılı ölçeksiz bırakır.
+    latest = max(periods, key=_period_key)
+    if _period_key(latest)[0] <= year:
+        return None
+    if quarter == 4:
+        return latest if _period_key(latest)[0] == year + 1 else f"{year + 1}Q4"
+    same = f"{year + 1}Q{quarter}"
+    return same if _period_key(same) <= _period_key(latest) else None
 
 
-def _undo_annual_restatement(values: dict[str, dict[str, float]]) -> list[str]:
+def _undo_forward_restatement(values: dict[str, dict[str, float]]) -> list[str]:
     """
-    Takes the Q4 column back to its own period end, and says which periods
+    Takes every column back to its own period end, and says which periods
     were moved.
 
-    İş Yatırım serves Q1-Q3 in the money of their own period end, but from
-    FORWARD_RESTATED_FROM onwards it serves Q4 in the money of the NEXT
-    report — it is the comparative column as the following year restates it.
-    Verified against Fintables on THYAO: 2024Q4 came scaled by TÜFE from
-    2024-12 to 2025-12 and 2025Q4 from 2025-12 to 2026-06, to four decimals,
-    on income, cash flow and balance sheet lines alike, and in both the lira
-    and the dollar presentation. 2021-2023 matched at exactly 1.0000 and are
-    left alone.
+    İş Yatırım serves a period the way the LATEST report carrying it states
+    it, not the way its own report did. Once the comparatives are
+    inflation-adjusted, that is a column scaled forward by a year of
+    inflation — Q1-Q3 to the same quarter of the following year, Q4 to the
+    latest interim report of the following year.
 
-    Left alone it inflates every annual figure by a year of inflation, makes
-    Q4 (annual less nine months) subtract two different currencies from each
-    other, and double counts when the real basis scales it again.
+    Verified against the published figures for BIMAS, whose 2024 annual
+    report states net sales of 328.442mn for 2023 and whose 2025 report
+    states 519.567mn for 2024: the raw columns are 474.2mn and 680.1mn, and
+    dividing by TÜFE 2023-12 -> 2024-12 and 2024-12 -> 2025-12 returns both
+    to four significant figures. The 2024 fourth quarter then comes out at
+    129.0mn against the 129.1mn the company reported, which only holds
+    because the nine-month column is moved too. Also checked on THYAO
+    against Fintables: 2024Q4 scaled by TÜFE 2024-12 -> 2025-12 and 2025Q4
+    by 2025-12 -> 2026-06, to four decimals, on income, cash flow and
+    balance sheet lines alike, in both the lira and the dollar presentation.
 
-    Q4 kolonunu kendi dönem sonuna geri getirir, taşınan dönemleri döner.
+    Left alone it inflates the figures by a year of inflation, makes every
+    derived quarter subtract two different currencies from each other, and
+    double counts when the real basis scales them again. Undoing the annual
+    column alone is worse still: the annual shrinks while the nine months do
+    not, and the fourth quarter collapses to nothing.
 
-    İş Yatırım Q1-Q3'ü kendi dönem sonunun parasında veriyor, ama
-    FORWARD_RESTATED_FROM'dan itibaren Q4'ü BİR SONRAKİ raporun parasında —
-    ertesi yılın düzelttiği karşılaştırma kolonu bu. THYAO'da Fintables'a
-    karşı doğrulandı: 2024Q4 TÜFE ile 2024-12'den 2025-12'ye, 2025Q4 ise
-    2025-12'den 2026-06'ya ölçeklenmiş geliyor; dört ondalık basamağa kadar,
-    gelir tablosu, nakit akım ve bilanço satırlarında aynı şekilde, hem lira
-    hem dolar sunumunda. 2021-2023 tam 1,0000 oranıyla eşleşti, onlara
-    dokunulmuyor.
+    Her kolonu kendi dönem sonuna geri getirir, taşınan dönemleri döner.
 
-    Dokunulmazsa her yıllık rakamı bir yıllık enflasyon kadar şişiriyor, Q4'ü
-    (yıllık eksi dokuz aylık) iki ayrı paranın birbirinden çıkarılması hâline
-    getiriyor ve reel tabanda bir kez daha ölçeklenerek çifte sayılıyor.
+    İş Yatırım bir dönemi, kendi raporunun değil, onu taşıyan EN SON raporun
+    yazdığı gibi veriyor. Karşılaştırma kolonları enflasyon düzeltmeli hâle
+    geldikten sonra bu, bir yıllık enflasyon kadar ileri ölçeklenmiş bir
+    kolon demek — Q1-Q3 ertesi yılın aynı çeyreğine, Q4 ertesi yılın en son
+    ara raporuna.
+
+    BIMAS'ın yayımlanmış rakamlarına karşı doğrulandı: 2024 yıllık raporu
+    2023 net satışlarını 328.442mn, 2025 raporu 2024'ü 519.567mn veriyor; ham
+    kolonlar 474,2mn ve 680,1mn ve TÜFE'nin 2023-12 -> 2024-12 ile
+    2024-12 -> 2025-12 çarpanlarına bölününce ikisi de dört anlamlı basamağa
+    kadar yerine oturuyor. 2024'ün dördüncü çeyreği de şirketin açıkladığı
+    129,1mn'ye karşı 129,0mn çıkıyor — bu ancak dokuz aylık kolon da
+    taşındığı için tutuyor. THYAO'da Fintables'a karşı da kontrol edildi:
+    2024Q4 TÜFE ile 2024-12'den 2025-12'ye, 2025Q4 ise 2025-12'den
+    2026-06'ya; dört ondalık basamağa kadar, gelir tablosu, nakit akım ve
+    bilanço satırlarında aynı şekilde, hem lira hem dolar sunumunda.
+
+    Dokunulmazsa rakamları bir yıllık enflasyon kadar şişiriyor, türetilen
+    her çeyreği iki ayrı paranın birbirinden çıkarılması hâline getiriyor ve
+    reel tabanda bir kez daha ölçeklenerek çifte sayılıyor. Yalnızca yıllık
+    kolonu geri almak daha da kötü: yıllık küçülürken dokuz aylık yerinde
+    kalıyor ve dördüncü çeyrek hiçe iniyor.
     """
     periods = sorted({period for series in values.values() for period in series})
     index = inflation.cpi_index()
@@ -110,13 +155,10 @@ def _undo_annual_restatement(values: dict[str, dict[str, float]]) -> list[str]:
 
     moved = []
     for period in periods:
-        year, quarter = period.split("Q")
-        if quarter != "4" or int(year) < FORWARD_RESTATED_FROM:
+        source = _restatement_source(periods, period)
+        if source is None or _period_key(source) < _period_key(TMS29_FROM):
             continue
-        target = _restatement_target(periods, int(year))
-        if target is None:
-            continue
-        factor = inflation.factor(period, target, index)
+        factor = inflation.factor(period, inflation.quarter_end_month(source), index)
         if not factor or factor <= 1:
             continue
         for series in values.values():
@@ -240,13 +282,13 @@ def quarterly(
     currency = CURRENCY_USD if str(currency).upper() == CURRENCY_USD else CURRENCY_TRY
     real = real and currency == CURRENCY_TRY
     values, labels = rows(symbol, quarters, refresh=refresh, currency=currency)
-    # Before anything reads a figure: the Q4 column arrives in the next
-    # report's money. Done on the whole of what is on disk, so the oldest
-    # year in the window still has the following year to look at.
-    # Herhangi bir rakam okunmadan önce: Q4 kolonu bir sonraki raporun
+    # Before anything reads a figure: a column arrives in the money of the
+    # latest report carrying it. Done on the whole of what is on disk, so the
+    # oldest year in the window still has the following year to look at.
+    # Herhangi bir rakam okunmadan önce: kolon, onu taşıyan en son raporun
     # parasında geliyor. Diskteki tüm veri üzerinde yapılıyor ki penceredeki
     # en eski yıl da ertesi yılı görebilsin.
-    restated = _undo_annual_restatement(values)
+    restated = _undo_forward_restatement(values)
     # Disk may hold more history than asked for; the depth is part of the contract.
     # Diskte istenenden fazla geçmiş olabilir; derinlik sözleşmenin parçası.
     wanted = {f"{year}Q{quarter}" for year, quarter in recent_quarters(quarters)}
@@ -299,7 +341,7 @@ def quarterly(
             "items": {},
             "unitDropped": [],
             "noFactor": [],
-            "annualRestated": [],
+            "forwardRestated": [],
             "supported": False,
             "sector": kind,
         }
@@ -317,5 +359,5 @@ def quarterly(
         "items": items,
         "unitDropped": dropped,
         "noFactor": no_factor,
-        "annualRestated": sorted(p for p in restated if p in wanted),
+        "forwardRestated": sorted(p for p in restated if p in wanted),
     }
