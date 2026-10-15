@@ -23,6 +23,12 @@ from .schema import FLOW, STOCK, item_kind
 QUARTER = "quarter"
 ANNUAL = "annual"
 
+# The derived quarter where the nominal and the inflation-adjusted era meet,
+# left blank in the quarterly view. See fikirler.txt, item 14.
+# Nominal dönemle enflasyon düzeltmeli dönemin birleştiği türetilmiş çeyrek;
+# çeyreklik görünümde boş bırakılıyor. Bkz. fikirler.txt, madde 14.
+TRANSITION_QUARTER = "2022Q4"
+
 DEBT_CODES = ["2AA", "2BA"]
 SPLIT_CODES = ["4BC", "4BD"]
 
@@ -175,6 +181,24 @@ def _to_annual(periods: dict[str, float | None], kind: str) -> dict[str, float |
     return out
 
 
+def _without_transition_quarter(items: dict) -> dict:
+    """
+    The flow lines with TRANSITION_QUARTER blanked out. The yearly total it
+    came from stays, so the annual view is untouched.
+
+    Akış satırları TRANSITION_QUARTER boşaltılmış hâlde. Geldiği yıllık toplam
+    yerinde kaldığı için yıllık görünüme dokunulmuyor.
+    """
+    out = {}
+    for code, entry in items.items():
+        periods = _periods_of(entry)
+        if item_kind(code) != FLOW or TRANSITION_QUARTER not in periods:
+            out[code] = entry
+            continue
+        out[code] = {**entry, "periods": {**periods, TRANSITION_QUARTER: None}}
+    return out
+
+
 def _quarter_counts(items: dict) -> dict[str, int]:
     """How many quarters each year actually has, so a half year can be marked."""
     counts: dict[str, set[str]] = {}
@@ -213,7 +237,7 @@ def summarise(statements: dict, period: str = QUARTER) -> dict:
     """
     items = statements.get("items") or {}
     annual = period == ANNUAL
-    source = _annualise(items) if annual else items
+    source = _annualise(items) if annual else _without_transition_quarter(items)
     columns = _columns(source)
     derived = _derive(source, columns)
 

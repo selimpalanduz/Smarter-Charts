@@ -59,6 +59,12 @@ def _period_key(period: str) -> tuple[int, int]:
     return int(year), int(quarter)
 
 
+def _mid_month(period: str) -> str:
+    """"2022Q2" -> "2022-05", the middle month of the quarter."""
+    year, quarter = _period_key(period)
+    return f"{year}-{quarter * 3 - 1:02d}"
+
+
 def _restatement_source(periods: list[str], period: str) -> str | None:
     """
     The report a column is served from: the latest one that carries `period`
@@ -303,21 +309,64 @@ def quarterly(
         scale, target = inflation.factors(all_periods)
         no_factor = [p for p in all_periods if p not in scale]
 
-    def adjusted(code: str, period: str) -> float | None:
+    # The columns that arrive with no inflation adjustment in them. Before
+    # TMS 29 a cumulative flow is a sum of months each in its own money, not
+    # a figure in the money of its period end, so scaling it from the period
+    # end treats the whole year as if it were earned in December. Those
+    # quarters are scaled from the middle month of each quarter instead,
+    # which assumes the flow spread evenly through it.
+    # _undo_forward_restatement has already moved every column an adjusted
+    # report carries, so what it left behind below 2023 is the nominal era.
+    # Hiç enflasyon düzeltmesi içermeyen kolonlar. TMS 29 öncesinde birikimli
+    # bir akış, her biri kendi parasında olan ayların toplamı; dönem sonunun
+    # parasında bir rakam değil. Dönem sonundan ölçeklemek bütün yılı aralıkta
+    # kazanılmış saymak olur. Bu çeyrekler onun yerine her çeyreğin orta
+    # ayından ölçekleniyor; akışın çeyrek içinde eşit dağıldığı varsayımıyla.
+    # _undo_forward_restatement düzeltmeli raporların taşıdığı her kolonu
+    # çoktan taşıdı, yani 2023'ün altında geriye kalanlar nominal dönem.
+    nominal_era = {
+        period
+        for period in all_periods
+        if _period_key(period)[0] < _period_key(TMS29_FROM)[0] and period not in restated
+    }
+    index = inflation.cpi_index() if real else {}
+
+    def cumulative(code: str, period: str, kind: str) -> float | None:
+        """Year to date in `target` money, or as reported when not real."""
         raw = values[code].get(period)
         if raw is None:
             return None
         if not real:
             return raw
-        multiplier = scale.get(period)
-        return raw * multiplier if multiplier is not None else None
+        if kind != FLOW or period not in nominal_era:
+            multiplier = scale.get(period)
+            return raw * multiplier if multiplier is not None else None
+
+        total = 0.0
+        year, quarter = _period_key(period)
+        for step in range(1, quarter + 1):
+            step_period = f"{year}Q{step}"
+            value = values[code].get(step_period)
+            if value is None:
+                return None
+            earlier_period = _previous(step_period)
+            if earlier_period is not None:
+                earlier = values[code].get(earlier_period)
+                if earlier is None:
+                    return None
+                value -= earlier
+            multiplier = inflation.month_factor(_mid_month(step_period), target, index)
+            if multiplier is None:
+                return None
+            total += value * multiplier
+        return total
 
     items: dict[str, dict] = {}
     for code, series in values.items():
         kind = item_kind(code)
         out: dict[str, float | None] = {}
         for period in sorted(series):
-            current = adjusted(code, period)
+            current = cumulative(code, period, kind)
             if kind != FLOW or current is None:
                 out[period] = current
                 continue
@@ -325,7 +374,7 @@ def quarterly(
             if previous_period is None:
                 out[period] = current
                 continue
-            previous = adjusted(code, previous_period)
+            previous = cumulative(code, previous_period, kind)
             out[period] = None if previous is None else current - previous
         items[code] = {"label": labels.get(code, ""), "kind": kind, "periods": out}
 

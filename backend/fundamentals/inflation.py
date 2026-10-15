@@ -82,18 +82,27 @@ def quarter_end_month(period: str) -> str:
     return f"{year}-{int(quarter) * 3:02d}"
 
 
+def month_factor(month: str, target: str, index: dict[str, float] | None = None) -> float | None:
+    """
+    Multiplier bringing money of `month` into `target` month money.
+
+    `month` ayının parasını `target` ayının parasına getiren çarpan.
+    """
+    index = index if index is not None else cpi_index()
+    source = index.get(month)
+    destination = index.get(target)
+    if not source or not destination:
+        return None
+    return destination / source
+
+
 def factor(period: str, target: str, index: dict[str, float] | None = None) -> float | None:
     """
     Multiplier bringing a figure reported for `period` into `target` month money.
 
     `period`'da raporlanmış bir rakamı `target` ayının parasına getiren çarpan.
     """
-    index = index if index is not None else cpi_index()
-    source = index.get(quarter_end_month(period))
-    destination = index.get(target)
-    if not source or not destination:
-        return None
-    return destination / source
+    return month_factor(quarter_end_month(period), target, index)
 
 
 def factors(periods: list[str], target: str | None = None) -> tuple[dict[str, float], str | None]:
