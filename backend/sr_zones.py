@@ -159,6 +159,77 @@ def find_sr_levels(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
     return [to_price(z) for z in resistances], [to_price(z) for z in supports]
 
 
+# A swing worth measuring a retracement against. Higher than the pivot
+# threshold: a Fibonacci ladder drawn over every minor wiggle says nothing.
+# Üzerine düzeltme ölçülmeye değer bir salınım. Pivot eşiğinden yüksek: her
+# küçük dalgalanmaya Fibonacci merdiveni çizmek hiçbir şey söylemiyor.
+SWING_PROMINENCE_ATR = 3.0
+
+
+def find_last_swing(df: pd.DataFrame) -> dict | None:
+    """
+    The most recent move between a prominent high and the prominent low beside
+    it, as {from, to}: `to` is the later end, so a retracement measured from it
+    reads as a fraction of the move just made, whichever way that move went.
+
+    The pair has to alternate — two highs in a row measure nothing — so the
+    search walks back from the latest extreme to the first one of the other
+    kind.
+
+    Belirgin bir tepe ile yanındaki belirgin dip arasındaki en son hareket,
+    {from, to} olarak: `to` sonraki uç, yani ondan ölçülen düzeltme, hareket
+    hangi yöne gitmiş olursa olsun, az önce yapılan hareketin kesiri olarak
+    okunuyor.
+
+    Çiftin dönüşümlü olması gerekiyor — üst üste iki tepe hiçbir şey ölçmez —
+    o yüzden arama en son uçtan geriye, diğer türden ilkine kadar yürüyor.
+    """
+    if df.empty or len(df) < PIVOT_DISTANCE * 4:
+        return None
+
+    atr = _atr_pct(df)
+    if not atr or math.isnan(atr):
+        return None
+
+    log_high = np.log(df["High"].to_numpy())
+    log_low = np.log(df["Low"].to_numpy())
+    min_prominence = atr * SWING_PROMINENCE_ATR
+
+    hi_idx, _ = find_peaks(log_high, distance=PIVOT_DISTANCE, prominence=min_prominence)
+    lo_idx, _ = find_peaks(-log_low, distance=PIVOT_DISTANCE, prominence=min_prominence)
+    extremes = [(int(i), "high") for i in hi_idx] + [(int(i), "low") for i in lo_idx]
+    if len(extremes) < 2:
+        return None
+
+    extremes.sort()
+    last_index, last_kind = extremes[-1]
+    earlier = next(((i, k) for i, k in reversed(extremes[:-1]) if k != last_kind), None)
+    if earlier is None:
+        return None
+
+    def point(index: int, kind: str) -> dict:
+        price = float(df["High"].iloc[index] if kind == "high" else df["Low"].iloc[index])
+        return {"date": df.index[index].strftime("%Y-%m-%d"), "price": price, "kind": kind}
+
+    return {
+        "from": point(*earlier),
+        "to": point(last_index, last_kind),
+        "direction": "up" if last_kind == "high" else "down",
+    }
+
+
+def get_last_swing(symbol: str) -> dict:
+    """The swing a Fibonacci retracement is drawn over, or supported=False."""
+    symbol = symbol.upper()
+    end = datetime.now().strftime("%Y-%m-%d")
+    start = (datetime.now() - timedelta(days=LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+
+    swing = find_last_swing(price_cache.query_range(symbol, start, end))
+    if swing is None:
+        return {"symbol": symbol, "supported": False}
+    return {"symbol": symbol, "supported": True, **swing}
+
+
 def get_sr_zones(symbol: str) -> dict:
     """
     The price cache is NOT warmed separately here (no ensure_cached /

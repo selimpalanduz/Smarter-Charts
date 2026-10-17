@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from data_provider import get_price_history, pe_band
 from volume_scanner import get_scan
-from sr_zones import get_sr_zones
+from sr_zones import get_last_swing, get_sr_zones
 from earnings import get_earnings
 from pattern_search import find_similar
 from moves import get_moves
@@ -83,6 +83,15 @@ def get_sr(symbol: str):
 def get_earnings_markers(symbol: str):
     try:
         return get_earnings(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/swing/{symbol}")
+def get_swing(symbol: str):
+    """The last prominent swing, for the automatic Fibonacci retracement."""
+    try:
+        return get_last_swing(symbol)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 

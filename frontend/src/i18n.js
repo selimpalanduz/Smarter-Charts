@@ -15,6 +15,8 @@ export const STRINGS = {
     indicators: 'Indicators',
     showAll: 'Show all',
     hideAll: 'Hide all',
+    sectionPresets: 'Ready-made sets',
+    presets: { momentum: 'Momentum', trend: 'Trend', volatility: 'Volatility', valuation: 'Valuation' },
     sectionIndicators: 'Oscillators & Indicators',
     sectionOther: 'Other Tools',
     tools: 'Tools',
@@ -49,6 +51,7 @@ export const STRINGS = {
       vwap: 'VWAP',
       supertrend: 'Supertrend',
       srZones: 'Support/Resistance',
+      autoFib: 'Auto Fibonacci',
       earnings: 'Earnings',
       moves: 'Sharp Moves',
       anchors: 'Psychological Levels',
@@ -64,11 +67,13 @@ export const STRINGS = {
     },
     groupHints: {
       srZones: 'Nearest clear swing highs/lows (Nx = times tested). A visual reference: in backtests these levels did not hold price more often than random levels.',
+      autoFib: 'Retracement levels over the latest prominent swing, found automatically. Draw your own with the F tool when you mean a different move.',
     },
     drawingTools: {
       horizontal: 'Horizontal Line',
       trendline: 'Trend Line',
       rectangle: 'Rectangle',
+      fib: 'Fibonacci Retracement',
       pattern: 'Find Pattern',
     },
     seriesTitles: {
@@ -271,7 +276,7 @@ export const STRINGS = {
     fundChangeRow: 'Change',
     fundPickLine: (label) => `Show ${label}`,
     dataSources: 'Data · TradingView · KAP',
-    shortcutsHint: '/ search · H T R P tools · Esc cancel · Del delete',
+    shortcutsHint: '/ search · H T R F P tools · Esc cancel · Del delete',
   },
 
   tr: {
@@ -286,6 +291,8 @@ export const STRINGS = {
     indicators: 'İndikatörler',
     showAll: 'Tümünü göster',
     hideAll: 'Tümünü gizle',
+    sectionPresets: 'Hazır düzenler',
+    presets: { momentum: 'Momentum', trend: 'Trend', volatility: 'Oynaklık', valuation: 'Değerleme' },
     sectionIndicators: 'Osilatörler & İndikatörler',
     sectionOther: 'Diğer Araçlar',
     tools: 'Araçlar',
@@ -320,6 +327,7 @@ export const STRINGS = {
       vwap: 'VWAP',
       supertrend: 'Supertrend',
       srZones: 'Destek/Direnç',
+      autoFib: 'Otomatik Fibonacci',
       earnings: 'Bilançolar',
       moves: 'Sert Hareketler',
       anchors: 'Psikolojik Seviyeler',
@@ -335,11 +343,13 @@ export const STRINGS = {
     },
     groupHints: {
       srZones: 'En yakın belirgin tepe/dipler (Nx = test sayısı). Görsel referanstır: geriye dönük testlerde bu seviyeler fiyatı rastgele seviyelerden daha sık tutmadı.',
+      autoFib: 'Kendiliğinden bulunan en son belirgin salınımın üzerindeki düzeltme seviyeleri. Başka bir hareketi kastediyorsan F aracıyla kendin çiz.',
     },
     drawingTools: {
       horizontal: 'Yatay Çizgi',
       trendline: 'Trend Çizgisi',
       rectangle: 'Dikdörtgen',
+      fib: 'Fibonacci Düzeltmesi',
       pattern: 'Formasyon Ara',
     },
     seriesTitles: {

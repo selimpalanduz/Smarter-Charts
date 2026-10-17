@@ -10,6 +10,7 @@ import {
 import {
   TrendLinePrimitive,
   RectanglePrimitive,
+  FibonacciPrimitive,
   HorizontalLinePrimitive,
   SRZonePrimitive,
   DailyChangePrimitive,
@@ -31,6 +32,7 @@ import {
   HorizontalLineIcon,
   RectangleIcon,
   PatternIcon,
+  FibonacciIcon,
   ExtendLeftIcon,
   ExtendRightIcon,
   DeleteIcon,
@@ -287,6 +289,7 @@ const OVERLAY_GROUPS = [
   { id: 'vwap', keys: ['vwap'] },
   { id: 'supertrend', keys: ['supertrendUp', 'supertrendDown'] },
   { id: 'srZones', keys: [] },
+  { id: 'autoFib', keys: [] },
   { id: 'earnings', keys: [] },
   { id: 'moves', keys: [] },
   { id: 'anchors', keys: [] },
@@ -380,7 +383,22 @@ const TOGGLE_GROUPS = [
   ...DEDICATED_GROUPS.flatMap((g) => (g.id === 'rsi' ? [{ id: 'rsi' }, { id: 'rsiDiv' }] : [{ id: g.id }])),
 ];
 
-const OTHER_TOOL_IDS = ['srZones', 'earnings', 'moves', 'anchors'];
+// Indicators that answer each other, as named sets. A preset is nothing new
+// underneath — it flips the same toggles the checkboxes do, so one press turns
+// its members on, a second turns those same members off, and whatever else is
+// open stays open.
+// Birbirini cevaplayan göstergeler, isimli kümeler hâlinde. Hazır düzen altta
+// yeni bir şey değil — kutucukların çevirdiği düğmeleri çeviriyor; bir basış
+// üyelerini açıyor, ikincisi aynı üyeleri kapatıyor, açık olan başka ne varsa
+// yerinde kalıyor.
+const PRESETS = [
+  { id: 'momentum', groups: ['rsi', 'macd', 'volume'] },
+  { id: 'trend', groups: ['ma', 'supertrend', 'adx'] },
+  { id: 'volatility', groups: ['bb', 'atr'] },
+  { id: 'valuation', groups: ['pe', 'earnings'] },
+];
+
+const OTHER_TOOL_IDS = ['srZones', 'autoFib', 'earnings', 'moves', 'anchors'];
 const PANEL_SECTIONS = [
   { titleKey: 'sectionIndicators', groups: TOGGLE_GROUPS.filter((g) => !OTHER_TOOL_IDS.includes(g.id)) },
   { titleKey: 'sectionOther', groups: TOGGLE_GROUPS.filter((g) => OTHER_TOOL_IDS.includes(g.id)) },
@@ -390,16 +408,29 @@ const DRAWING_TOOLS = [
   { id: 'horizontal', clicksNeeded: 1, key: 'H' },
   { id: 'trendline', clicksNeeded: 2, key: 'T' },
   { id: 'rectangle', clicksNeeded: 2, key: 'R' },
+  { id: 'fib', clicksNeeded: 2, key: 'F' },
   { id: 'pattern', clicksNeeded: 2, key: 'P' },
 ];
 
-const TWO_POINT_TOOLS = ['trendline', 'rectangle', 'pattern'];
+const TWO_POINT_TOOLS = ['trendline', 'rectangle', 'fib', 'pattern'];
 const TOOL_ICONS = {
   horizontal: HorizontalLineIcon,
   trendline: TrendLineIcon,
   rectangle: RectangleIcon,
+  fib: FibonacciIcon,
   pattern: PatternIcon,
 };
+// Pattern search has no primitive of its own; it borrows the rectangle to show
+// the span being searched.
+// Formasyon aramasının kendi şekli yok; aranan aralığı göstermek için
+// dikdörtgeni ödünç alıyor.
+const TWO_POINT_PRIMITIVES = {
+  trendline: TrendLinePrimitive,
+  rectangle: RectanglePrimitive,
+  fib: FibonacciPrimitive,
+  pattern: RectanglePrimitive,
+};
+
 const SIDEBAR_TABS = [
   { id: 'indicators', labelKey: 'tabIndicators' },
   { id: 'scan', labelKey: 'tabScan' },
@@ -463,6 +494,13 @@ async function fetchSrZones(symbol) {
 
 async function fetchAnchors(symbol) {
   const url = `${API_BASE}/api/anchors/${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchSwing(symbol) {
+  const url = `${API_BASE}/api/swing/${symbol}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -706,6 +744,30 @@ function applySrZones(series, primitivesRef, srData, visible) {
   primitives[0]?.requestRedraw();
 }
 
+// The retracement over the swing the backend found. Drawn, not drawable: it
+// has no handles and is not in drawingsRef, so Del and the cursor leave it
+// alone and it is replaced wholesale when the symbol changes.
+// Backend'in bulduğu salınımın üzerindeki düzeltme. Çizilen bir şey, çizilebilir
+// değil: tutamağı yok ve drawingsRef'te durmuyor, yani Del ve imleç ona
+// dokunmuyor, sembol değişince toptan yenileniyor.
+function applyAutoFib(series, primitiveRef, swing, visible) {
+  if (!series) return;
+  if (primitiveRef.current) {
+    series.detachPrimitive(primitiveRef.current);
+    primitiveRef.current = null;
+  }
+  if (!visible || !swing?.supported) return;
+
+  const primitive = new FibonacciPrimitive(
+    { time: swing.to.date, price: swing.to.price },
+    { time: swing.from.date, price: swing.from.price },
+    { color: colors().accent },
+  );
+  series.attachPrimitive(primitive);
+  primitive.requestRedraw();
+  primitiveRef.current = primitive;
+}
+
 // Redraws the psychological level lines: dashed for round numbers, dotted for the 52-week high/low.
 // Psikolojik seviye çizgilerini yeniden çizer: yuvarlak sayılar kesikli, 52 haftalık zirve/dip noktalı.
 function applyAnchors(series, linesRef, data, visible, str) {
@@ -866,6 +928,8 @@ function App() {
   const [visibility, setVisibility] = useState(() => Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, false])));
 
   const peBandRef = useRef(null);
+  const swingRef = useRef(null);
+  const autoFibRef = useRef(null);
   const srZonesRef = useRef(null);
   const srPrimitivesRef = useRef([]);
   const anchorsRef = useRef(null);
@@ -936,6 +1000,11 @@ function App() {
       return;
     }
 
+    if (groupId === 'autoFib') {
+      applyAutoFib(seriesMapRef.current.candle, autoFibRef, swingRef.current, nextVisible);
+      return;
+    }
+
     if (groupId === 'anchors') {
       anchorsVisibleRef.current = nextVisible;
       applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, nextVisible, STRINGS[langRef.current]);
@@ -994,29 +1063,31 @@ function App() {
     }
   }
 
-  function handleToggleAll() {
-    const allVisible = TOGGLE_GROUPS.every((g) => visibility[g.id]);
-    const target = !allVisible;
-    const newVisibility = Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, target]));
+  // Moves every group to the state the map asks for, whatever changed. The
+  // per-group branches in handleToggle are for a single switch; this is the
+  // path for anything that flips several at once.
+  // Her grubu haritanın istediği hâle getirir, ne değişmiş olursa olsun.
+  // handleToggle'daki grup bazlı dallar tek bir düğme için; aynı anda birkaçını
+  // çeviren her şeyin yolu burası.
+  function applyVisibility(newVisibility) {
     setVisibility(newVisibility);
 
     OVERLAY_GROUPS.forEach((group) => {
       group.keys.forEach((key) => {
-        seriesMapRef.current[key]?.applyOptions({ visible: target });
+        seriesMapRef.current[key]?.applyOptions({ visible: newVisibility[group.id] });
       });
     });
-    applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, target);
-    anchorsVisibleRef.current = target;
-    applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, target, STRINGS[langRef.current]);
-    setMaVisible(target);
-    earningsVisibleRef.current = target;
-    movesVisibleRef.current = target;
-    crossVisibleRef.current = target;
+    applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, newVisibility.srZones);
+    applyAutoFib(seriesMapRef.current.candle, autoFibRef, swingRef.current, newVisibility.autoFib);
+    anchorsVisibleRef.current = newVisibility.anchors;
+    applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, newVisibility.anchors, STRINGS[langRef.current]);
+    setMaVisible(newVisibility.ma);
+    earningsVisibleRef.current = newVisibility.earnings;
+    movesVisibleRef.current = newVisibility.moves;
+    crossVisibleRef.current = newVisibility.maCross;
     refreshMarkers();
-    if (!target) {
-      setEarningsTip(null);
-      setMoveDetail(null);
-    }
+    if (!newVisibility.earnings) setEarningsTip(null);
+    if (!newVisibility.moves) setMoveDetail(null);
 
     const chart = chartRef.current;
     if (chart) {
@@ -1024,6 +1095,20 @@ function App() {
       applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
       renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     }
+  }
+
+  function handleToggleAll() {
+    const target = !TOGGLE_GROUPS.every((g) => visibility[g.id]);
+    applyVisibility(Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, target])));
+  }
+
+  function handlePreset(preset) {
+    const target = !preset.groups.every((id) => visibility[id]);
+    const next = { ...visibility };
+    preset.groups.forEach((id) => {
+      next[id] = target;
+    });
+    applyVisibility(next);
   }
 
   function refreshMarkers() {
@@ -1170,8 +1255,7 @@ function App() {
       return;
     }
 
-    const primitive =
-      tool === 'trendline' ? new TrendLinePrimitive(p1, p2) : new RectanglePrimitive(p1, p2);
+    const primitive = new TWO_POINT_PRIMITIVES[tool](p1, p2);
     series.attachPrimitive(primitive);
     drawingsRef.current.push(primitive);
     setActiveTool(null);
@@ -1231,7 +1315,7 @@ function App() {
     const p2 = { time: param.time, price };
 
     if (!previewPrimitiveRef.current) {
-      const PrimitiveClass = tool === 'trendline' ? TrendLinePrimitive : RectanglePrimitive;
+      const PrimitiveClass = TWO_POINT_PRIMITIVES[tool];
       const extra = tool === 'pattern' ? patternHighlight() : {};
       const preview = new PrimitiveClass(p1, p2, { preview: true, ...extra });
       series.attachPrimitive(preview);
@@ -1386,6 +1470,9 @@ function App() {
         const bandData = await fetchPeBand(symbol).catch(() => null);
         if (cancelled) return;
         peBandRef.current = bandData;
+        const swingData = await fetchSwing(symbol).catch(() => null);
+        if (cancelled) return;
+        swingRef.current = swingData;
 
         const themeOptions = chartThemeOptions(colors());
         chart = createChart(chartContainerRef.current, {
@@ -1415,6 +1502,7 @@ function App() {
         setUpdatedAt(new Date());
         renderAllSeries(seriesMapRef.current, loadedData);
         applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
+        applyAutoFib(seriesMapRef.current.candle, autoFibRef, swingRef.current, visibility.autoFib);
         earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
         earningsVisibleRef.current = visibility.earnings;
         movesVisibleRef.current = visibility.moves;
@@ -1746,6 +1834,30 @@ function App() {
           }
           .stc-toggle-all:hover {
             background: var(--btn-bg-hover);
+            color: var(--text-strong);
+          }
+          .stc-preset-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
+          }
+          .stc-preset {
+            font-family: inherit;
+            font-size: 12.5px;
+            border: 1px solid var(--btn-border);
+            background: var(--btn-bg);
+            color: var(--text);
+            border-radius: 3px;
+            padding: 7px 8px;
+            cursor: pointer;
+            transition: background-color 120ms ease, color 120ms ease;
+          }
+          .stc-preset:hover {
+            background: var(--btn-bg-hover);
+            color: var(--text-strong);
+          }
+          .stc-preset.is-active {
+            border-color: var(--accent);
             color: var(--text-strong);
           }
           .stc-section-title {
@@ -2395,6 +2507,19 @@ function App() {
               <button className="stc-toggle-all" onClick={handleToggleAll}>
                 {allVisible ? str.hideAll : str.showAll}
               </button>
+              <div className="stc-section-title">{str.sectionPresets}</div>
+              <div className="stc-preset-grid">
+                {PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    className={`stc-preset ${preset.groups.every((id) => visibility[id]) ? 'is-active' : ''}`}
+                    title={preset.groups.map((id) => str.groups[id]).join(' + ')}
+                    onClick={() => handlePreset(preset)}
+                  >
+                    {str.presets[preset.id]}
+                  </button>
+                ))}
+              </div>
               {PANEL_SECTIONS.map((section) => (
                 <div key={section.titleKey}>
                   <div className="stc-section-title">{str[section.titleKey]}</div>

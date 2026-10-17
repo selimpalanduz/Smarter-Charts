@@ -144,6 +144,123 @@ export class TrendLinePrimitive {
   }
 }
 
+// The retracement levels, as fractions of the move between the two anchors.
+// 0 sits on the first point and 1 on the second, so a high-to-low drag reads
+// downwards and a low-to-high drag reads upwards without a separate case.
+// Düzeltme seviyeleri, iki çıpa arasındaki hareketin kesirleri olarak. 0 ilk
+// noktada, 1 ikincisinde; böylece tepeden dibe çekiş aşağı, dipten tepeye
+// çekiş yukarı okunuyor, ayrı bir durum yazmaya gerek kalmıyor.
+export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const FIB_LABEL_PAD = 4;
+
+export class FibonacciPrimitive {
+  constructor(p1, p2, options = {}) {
+    this._p1 = p1;
+    this._p2 = p2;
+    this._options = { lineWidth: 1, preview: false, ...options };
+    this._selected = false;
+    this._paneViews = [new BasePaneView(this)];
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+  }
+  attached({ chart, series, requestUpdate }) {
+    this._chart = chart;
+    this._series = series;
+    this._requestUpdate = requestUpdate;
+  }
+  detached() {
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+  }
+  updateAllViews() {
+    this._paneViews.forEach((v) => v.update());
+  }
+  paneViews() {
+    return this._paneViews;
+  }
+  setSecondPoint(p2) {
+    this._p2 = p2;
+    this._requestUpdate?.();
+  }
+  setSelected(selected) {
+    this._selected = selected;
+    this._requestUpdate?.();
+  }
+  // Attaching alone does not repaint, so an instance that is placed rather
+  // than drawn by hand has to ask for it.
+  // Eklemek tek başına yeniden boyamıyor, elle çizilmek yerine yerleştirilen
+  // bir örneğin bunu istemesi gerekiyor.
+  requestRedraw() {
+    this._requestUpdate?.();
+  }
+  _coords() {
+    if (!this._chart || !this._series) return null;
+    const x1 = this._chart.timeScale().timeToCoordinate(this._p1.time);
+    const y1 = this._series.priceToCoordinate(this._p1.price);
+    const x2 = this._chart.timeScale().timeToCoordinate(this._p2.time);
+    const y2 = this._series.priceToCoordinate(this._p2.price);
+    if (x1 === null || y1 === null || x2 === null || y2 === null) return null;
+    return { x1, y1, x2, y2 };
+  }
+  // Anywhere inside the ladder, not just on a line: the lines are a pixel
+  // wide and the thing the reader thinks they are clicking is the block.
+  // Merdivenin içinde herhangi bir yer, yalnızca çizgi üstü değil: çizgiler
+  // bir piksel ve okurun tıkladığını sandığı şey bloğun kendisi.
+  hitTest(x, y) {
+    const c = this._coords();
+    if (!c) return false;
+    const left = Math.min(c.x1, c.x2);
+    const right = Math.max(c.x1, c.x2);
+    const top = Math.min(c.y1, c.y2);
+    const bottom = Math.max(c.y1, c.y2);
+    return x >= left - 6 && x <= right + 6 && y >= top - 6 && y <= bottom + 6;
+  }
+  _draw(ctx, mediaSize) {
+    const c = this._coords();
+    if (!c) return;
+    const left = Math.min(c.x1, c.x2);
+    const right = Math.max(c.x1, c.x2);
+
+    ctx.save();
+    const color = this._options.color ?? colors().drawing;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = this._options.lineWidth;
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.textBaseline = 'bottom';
+    if (this._options.preview) {
+      ctx.setLineDash([6, 4]);
+      ctx.globalAlpha = 0.7;
+    }
+
+    // The two anchors keep the full line; the levels between them are drawn
+    // lighter, so the move being measured stays the stronger shape.
+    // İki çıpa tam çizgiyi koruyor; aralarındaki seviyeler daha soluk
+    // çiziliyor ki ölçülen hareket baskın şekil olarak kalsın.
+    FIB_LEVELS.forEach((level) => {
+      const y = c.y1 + (c.y2 - c.y1) * level;
+      const anchor = level === 0 || level === 1;
+      ctx.globalAlpha = this._options.preview ? 0.7 : anchor ? 1 : 0.55;
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+
+      const price = this._p1.price + (this._p2.price - this._p1.price) * level;
+      const text = `${level.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}  ${price.toFixed(2)}`;
+      ctx.fillText(text, left + FIB_LABEL_PAD, y - 2);
+    });
+    ctx.restore();
+
+    if (this._selected) {
+      drawHandle(ctx, c.x1, c.y1, this._options.color ?? colors().drawing);
+      drawHandle(ctx, c.x2, c.y2, this._options.color ?? colors().drawing);
+    }
+  }
+}
+
 export class RectanglePrimitive {
   constructor(p1, p2, options = {}) {
     this._p1 = p1;

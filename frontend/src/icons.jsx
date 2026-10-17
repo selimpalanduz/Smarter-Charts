@@ -40,6 +40,11 @@ export const HorizontalLineIcon = (p) => (
     <circle cx="12" cy="12" r="1.6" />
   </Icon>
 );
+export const FibonacciIcon = (p) => (
+  <Icon {...p}>
+    <path d="M3 5h18M3 10h18M3 14h18M3 19h18" />
+  </Icon>
+);
 export const RectangleIcon = (p) => <Icon {...p}><rect x="4" y="6" width="16" height="12" rx="1" /></Icon>;
 export const PatternIcon = (p) => (
   <Icon {...p}>
