@@ -18,7 +18,13 @@ _net_income_cache: dict[str, tuple[float, pd.Series]] = {}
 # Seconds — quarterly data doesn't change more often than this.
 # Saniye — çeyreklik veri bu kadar sık değişmiyor.
 FUNDAMENTALS_CACHE_TTL = 3600
-NET_INCOME_QUARTERS = 20
+# As deep as the statement store itself, so the P/E has the same history to
+# be read against as every other line. Four of them go into the first
+# trailing sum, leaving that many fewer points.
+# Mali tablo deposu kadar derin, ki F/K da diğer her satırla aynı geçmişe
+# karşı okunabilsin. İlk yıllık toplama dördü gittiği için o kadar az nokta
+# kalıyor.
+NET_INCOME_QUARTERS = statements.QUARTERS
 
 
 def get_quarterly_net_income(symbol: str) -> pd.Series:
@@ -57,11 +63,31 @@ def get_ttm_eps(symbol: str) -> pd.Series:
     year of price history again just to compute 52-week high/low and moving
     averages that aren't used.
 
+    Today's count is the right one for every past bar as well, because the
+    prices are bonus-adjusted: an adjusted price is the raw price divided by
+    the same factor the bonus multiplied the share count by, so the two
+    cancel and the product is the market capitalisation as it stood. Using
+    the share count of the time instead would apply the adjustment twice.
+    Checked on BIMAS (1:1 on 2026-05-14), FROTO (10x on 2025-05-07) and
+    TUPRS (7x on 2023-04-04): the raw and adjusted series differ by exactly
+    that factor. A capital increase for cash is not adjusted this way and
+    stays a known error in the older bars of a symbol that held one.
+
     TTM EPS = (son 4 gerçek çeyreğin net kârı) / (güncel hisse sayısı).
     Hisse sayısını `fast_info` yerine doğrudan `get_company_metrics()` +
     ucuz "last price" ile hesaplıyoruz — fast_info, kullanmadığımız 52
     haftalık yüksek/düşük ve hareketli ortalamaları hesaplamak için tam
     1 yıllık fiyat geçmişini gereksiz yere bir kez daha indiriyordu.
+
+    Güncel sayı geçmiş barlar için de doğru olanı, çünkü fiyatlar bedelsize
+    göre düzeltilmiş: düzeltilmiş fiyat, ham fiyatın bedelsizin hisse
+    sayısını çarptığı çarpana bölünmüş hâli; ikisi sadeleşiyor ve çarpım o
+    günkü piyasa değerini veriyor. Onun yerine o günün hisse sayısını
+    kullanmak düzeltmeyi iki kez uygulamak olurdu. BIMAS (14.05.2026 1'e 1),
+    FROTO (07.05.2025 10 kat) ve TUPRS (04.04.2023 7 kat) üzerinde kontrol
+    edildi: ham ve düzeltilmiş seri tam o çarpan kadar ayrışıyor. Bedelli
+    sermaye artırımı bu şekilde düzeltilmiyor, yapan sembolün eski
+    barlarında bilinen bir hata olarak kalıyor.
     """
     symbol = symbol.upper()
     now = time.time()
