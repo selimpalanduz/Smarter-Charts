@@ -2,7 +2,7 @@ import os
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from data_provider import get_price_history
+from data_provider import get_price_history, pe_band
 from volume_scanner import get_scan
 from sr_zones import get_sr_zones
 from earnings import get_earnings
@@ -83,6 +83,15 @@ def get_sr(symbol: str):
 def get_earnings_markers(symbol: str):
     try:
         return get_earnings(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/pe-band/{symbol}")
+def get_pe_band(symbol: str):
+    """Where the symbol's P/E stands in its own history."""
+    try:
+        return pe_band(symbol)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 

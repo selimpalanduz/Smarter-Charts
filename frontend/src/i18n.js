@@ -224,7 +224,16 @@ export const STRINGS = {
     fundNetDebtEbitda: 'Net Debt / EBITDA',
     fundBandTitle: 'Ratio bands',
     fundBandNote: 'Where today’s figure sits inside the line’s own history. The lighter block is the middle half.',
-    fundBandPercentile: (p) => `${p}th percentile`,
+    // 1st, 2nd, 3rd — and the teens, which take 'th' whatever they end in.
+    fundBandPercentile: (p) => {
+      const tens = p % 100;
+      const suffix = tens >= 11 && tens <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][p % 10] ?? 'th');
+      return `${p}${suffix} percentile`;
+    },
+    fundPeBandTitle: 'P/E against its own history',
+    fundPeBandNote: (years, restated) =>
+      `Daily readings over ${years} years; the ends are the 5th and 95th percentile, the lighter block the middle half.`
+      + (restated ? ` Earnings before ${restated} carry no inflation adjustment, so the two halves measure profit differently.` : ''),
     fundValuationTitle: 'Valuation',
     fundValuationNote: (period) =>
       `The price against the statements through ${period}, as reported — the measure the market quotes. A ratio is unit-free, so the basis buttons do not change it.`,
@@ -487,6 +496,10 @@ export const STRINGS = {
     fundBandTitle: 'Oran bantları',
     fundBandNote: 'Bugünkü rakamın satırın kendi geçmişindeki yeri. Açık blok ortadaki yarı.',
     fundBandPercentile: (p) => `${p}. yüzdelik`,
+    fundPeBandTitle: 'F/K kendi geçmişine karşı',
+    fundPeBandNote: (years, restated) =>
+      `${years} yılın günlük okumaları; uçlar %5 ve %95 yüzdelikleri, açık blok ortadaki yarı.`
+      + (restated ? ` ${restated} öncesindeki kârlar enflasyon düzeltmesi içermiyor, yani iki yarı kârı farklı ölçüyor.` : ''),
     fundValuationTitle: 'Değerleme',
     fundValuationNote: (period) =>
       `Fiyatın ${period} tablolarına vurulmuş hâli, raporlandığı gibi — piyasanın kullandığı ölçü. Oran birimsiz olduğu için taban düğmeleri bunu değiştirmiyor.`,

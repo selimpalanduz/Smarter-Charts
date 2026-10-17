@@ -354,6 +354,22 @@ const DEDICATED_GROUPS = [
       { key: 'pe', type: LineSeries, options: { color: '#c2410c', lineWidth: 1.5, title: 'P/E' }, data: (rows) => lineData(rows, 'PE') },
       { key: 'peYoy', type: LineSeries, options: { color: '#64748b', lineWidth: 1, lineStyle: 2, title: 'P/E (1y ago)' }, data: (rows) => lineData(rows, 'PE_PrevYear') },
     ],
+    // The quartiles of the symbol's own P/E history, so the line can be read
+    // against something. Held flat across the pane: they describe the whole
+    // history, not the window in view, and they stay put while it is scrolled.
+    // Sembolün kendi F/K geçmişinin çeyreklikleri, ki çizgi bir şeye karşı
+    // okunabilsin. Panel boyunca düz duruyorlar: pencereyi değil bütün geçmişi
+    // anlatıyorlar ve pencere kaydırılırken yerinde kalıyorlar.
+    priceLinesFrom: (extras) => {
+      const band = extras?.peBand;
+      if (!band?.supported) return [];
+      return [
+        { price: band.p75, color: '#64748b', lineStyle: 1, lineWidth: 1, title: '75%' },
+        { price: band.median, color: '#64748b', lineStyle: 2, lineWidth: 1, title: '50%' },
+        { price: band.p25, color: '#64748b', lineStyle: 1, lineWidth: 1, title: '25%' },
+      ];
+    },
+    priceLineTargetKey: 'pe',
   },
 ];
 
@@ -447,6 +463,13 @@ async function fetchSrZones(symbol) {
 
 async function fetchAnchors(symbol) {
   const url = `${API_BASE}/api/anchors/${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchPeBand(symbol) {
+  const url = `${API_BASE}/api/pe-band/${symbol}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -720,7 +743,7 @@ function renderAllSeries(seriesMap, loadedData) {
 // Tears down ALL dedicated panes (indices 1..N, removed from the end
 // backwards so indices never shift mid-loop) and rebuilds only the
 // currently-visible ones, in DEDICATED_GROUPS order, as pane 1, 2, 3...
-function rebuildDedicatedPanes(chart, seriesMap, currentVisibility) {
+function rebuildDedicatedPanes(chart, seriesMap, currentVisibility, extras) {
   const paneCount = chart.panes().length;
   for (let i = paneCount - 1; i >= 1; i--) {
     chart.removePane(i);
@@ -741,9 +764,10 @@ function rebuildDedicatedPanes(chart, seriesMap, currentVisibility) {
     });
     chart.panes()[nextIndex].setStretchFactor(group.stretch);
 
-    if (group.priceLines) {
+    const priceLines = [...(group.priceLines ?? []), ...(group.priceLinesFrom?.(extras) ?? [])];
+    if (priceLines.length) {
       const target = seriesMap[group.priceLineTargetKey];
-      group.priceLines.forEach((line) => target.createPriceLine(line));
+      priceLines.forEach((line) => target.createPriceLine(line));
     }
 
     nextIndex += 1;
@@ -841,6 +865,7 @@ function App() {
   // Her şey kapalı başlar; kullanıcı ihtiyacı olanı açar.
   const [visibility, setVisibility] = useState(() => Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, false])));
 
+  const peBandRef = useRef(null);
   const srZonesRef = useRef(null);
   const srPrimitivesRef = useRef([]);
   const anchorsRef = useRef(null);
@@ -934,7 +959,7 @@ function App() {
       if (nextVisible && !visibility.rsi) {
         newVisibility.rsi = true;
         setVisibility(newVisibility);
-        rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
+        rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, { peBand: peBandRef.current });
         applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
         renderAllSeries(seriesMapRef.current, loadedDataRef.current);
       } else {
@@ -958,7 +983,7 @@ function App() {
 
     const isDedicated = DEDICATED_GROUPS.some((g) => g.id === groupId);
     if (isDedicated) {
-      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
+      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, { peBand: peBandRef.current });
       applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
       renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     } else {
@@ -995,7 +1020,7 @@ function App() {
 
     const chart = chartRef.current;
     if (chart) {
-      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility);
+      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, { peBand: peBandRef.current });
       applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
       renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     }
@@ -1358,6 +1383,9 @@ function App() {
         if (cancelled) return;
         earningsRef.current = earningsData;
         setEarningsNext(earningsData?.next ?? null);
+        const bandData = await fetchPeBand(symbol).catch(() => null);
+        if (cancelled) return;
+        peBandRef.current = bandData;
 
         const themeOptions = chartThemeOptions(colors());
         chart = createChart(chartContainerRef.current, {
@@ -1378,7 +1406,7 @@ function App() {
         chart.panes()[0].setStretchFactor(MAIN_PANE_STRETCH);
         applyChartTheme(chart, seriesMapRef.current);
 
-        rebuildDedicatedPanes(chart, seriesMapRef.current, visibility);
+        rebuildDedicatedPanes(chart, seriesMapRef.current, visibility, { peBand: peBandRef.current });
         applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
 
         loadedData = data;

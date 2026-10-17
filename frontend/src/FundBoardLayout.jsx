@@ -1,14 +1,27 @@
 import { useState } from 'react';
 import { SERIES } from './theme.js';
 import { useT } from './i18n.js';
-import { useValuation } from './fundApi.js';
+import { usePeBand, useValuation } from './fundApi.js';
 import { BandBar, BarChart, LineChart } from './FundCharts.jsx';
-import { band, change, FLAT_SCALE, formatCell, num, rowScale } from './fundFormat.js';
+import { band, bandFromStats, change, FLAT_SCALE, formatCell, num, rowScale } from './fundFormat.js';
 
 const KPI_KEYS = ['3C', 'ebitda', '3Z', 'netMargin'];
 const MARGIN_KEYS = ['grossMargin', 'operatingMargin', 'netMargin'];
 const WARN = 'M7 1.5 L13 12.5 L1 12.5 Z M7 5.5 L7 8.5 M7 10.3 L7 10.4';
 const OK = 'M2 7 L5.5 10.5 L12 3.5';
+
+// How long the band covers, to one decimal: "5,6 years" reads as a span
+// where a start date would read as trivia.
+// Bandın kapsadığı süre, bir ondalıkla: "5,6 yıl" bir aralık anlatıyor,
+// başlangıç tarihi ise ayrıntı olarak kalıyor.
+function yearsOf(stats, locale) {
+  const days = (new Date(stats.to) - new Date(stats.from)) / 86400000;
+  return num(days / 365.25, locale, 1);
+}
+
+function onDate(iso, locale) {
+  return iso ? new Date(iso).toLocaleDateString(locale) : null;
+}
 
 function labelOf(row, str) {
   return row.label[str.langKey] ?? row.label.tr;
@@ -95,6 +108,8 @@ function checksFor(rows, str) {
 function ValuationCard({ symbol }) {
   const str = useT();
   const { data, error, loading } = useValuation(symbol);
+  const { data: peStats } = usePeBand(symbol);
+  const peBar = bandFromStats(peStats);
 
   const money = (value) => {
     if (value == null) return '—';
@@ -137,6 +152,25 @@ function ValuationCard({ symbol }) {
         <p className="stc-fund-card-sub" style={{ margin: '8px 0 0' }}>
           {str.fundValuationProviderNote}
         </p>
+        {peBar && (
+          <div style={{ marginTop: '14px' }}>
+            <div className="stc-fund-card-head">
+              <span style={{ fontSize: '11.5px' }}>{str.fundPeBandTitle}</span>
+              <b className="stc-mono" style={{ fontSize: '14px', color: 'var(--text-strong)' }}>
+                {`${num(peBar.value, str.locale, 1)}x`}
+              </b>
+            </div>
+            <BandBar
+              band={peBar}
+              low={`${num(peBar.low, str.locale, 1)}x`}
+              high={`${num(peBar.high, str.locale, 1)}x`}
+              caption={str.fundBandPercentile(peBar.percentile)}
+            />
+            <p className="stc-fund-card-sub" style={{ margin: '6px 0 0' }}>
+              {str.fundPeBandNote(yearsOf(peStats, str.locale), onDate(peStats.restatedFrom, str.locale))}
+            </p>
+          </div>
+        )}
       </>
     );
   }

@@ -14,6 +14,41 @@ export function valuationUrl(symbol) {
   return `${API_BASE}/api/fundamentals/valuation/${symbol}`;
 }
 
+// The P/E measured daily against price, reduced to its own history. Shared
+// with the chart's P/E pane, which draws the same percentiles as lines.
+// Fiyata karşı günlük ölçülmüş F/K'nın kendi geçmişine indirgenmiş hâli.
+// Grafikteki F/K paneliyle ortak; o da aynı yüzdelikleri çizgi olarak çiziyor.
+export function peBandUrl(symbol) {
+  return `${API_BASE}/api/pe-band/${symbol}`;
+}
+
+export function usePeBand(symbol) {
+  const [state, setState] = useState({ data: null, loading: true });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ data: null, loading: true });
+
+    fetch(peBandUrl(symbol))
+      .then((res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled) setState({ data, loading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ data: null, loading: false });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
+
+  return state;
+}
+
 export function useSummary(symbol, basis, period) {
   const str = useT();
   const [state, setState] = useState({ data: null, error: null, loading: true });

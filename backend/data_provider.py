@@ -14,6 +14,7 @@ PE_YOY_BUFFER_DAYS = 400
 MA_PERIODS = (5, 9, 12, 20, 21, 50, 100, 200)
 
 _fundamentals_cache: dict[str, tuple[float, pd.Series]] = {}
+_pe_band_cache: dict[str, tuple[float, dict]] = {}
 _net_income_cache: dict[str, tuple[float, pd.Series]] = {}
 # Seconds — quarterly data doesn't change more often than this.
 # Saniye — çeyreklik veri bu kadar sık değişmiyor.
@@ -227,6 +228,118 @@ def attach_pe_yoy(df: pd.DataFrame) -> pd.DataFrame:
     )
     df = df.drop(columns=["_date"])
     return df
+
+
+# Below this many days a corridor describes the noise, not the history.
+# Bu kadar günün altında koridor geçmişi değil gürültüyü anlatır.
+PE_BAND_MIN_DAYS = 250
+
+
+def pe_band(symbol: str) -> dict:
+    """
+    Where the P/E stands in its own history: the full daily series reduced to
+    percentiles, plus today's value and the share of the past below it.
+
+    The ends are the 5th and 95th percentile, not the lowest and highest
+    reading, so that a single day cannot set the scale: a P/E explodes
+    whenever trailing earnings pass near zero, and KCHOL tops out at 357
+    that way. Where earnings stayed near zero for months the band is wide
+    even so — KCHOL spent 257 days above its own third quartile in 2025 —
+    and that width is the finding, not a defect: P/E is no yardstick for a
+    company whose profit swings through zero. The true extremes are kept as
+    `min` and `max`.
+
+    One number alone says nothing — a P/E of 16 is cheap for one company and
+    dear for another — and a peer group is a different argument. The symbol's
+    own past is the comparison it can be held to.
+
+    `restatedFrom` is the day the first inflation-accounted report reached the
+    market. Before it, earnings carry no inflation adjustment at all, so the
+    two halves of the corridor measure profit differently; the reader is told
+    rather than left to assume one regime.
+
+    F/K'nın kendi geçmişindeki yeri: günlük serinin yüzdeliklere indirgenmiş
+    hâli, bugünkü değer ve geçmişin ne kadarının onun altında kaldığı.
+
+    Uçlar en düşük ve en yüksek okuma değil, %5 ve %95 yüzdelikleri; tek bir
+    gün ölçeği belirlemesin diye: son dört çeyreğin kârı sıfıra yaklaştığında
+    F/K patlıyor, KCHOL'de 357'ye çıkıyor. Kârın aylarca sıfıra yakın kaldığı
+    yerde bant buna rağmen geniş — KCHOL 2025'te 257 gün kendi üçüncü
+    çeyreğinin üstünde kaldı — ve bu genişlik kusur değil, bulgunun kendisi:
+    kârı sıfırın içinden geçen şirkette F/K bir ölçü değil. Gerçek uçlar
+    `min` ve `max` olarak duruyor.
+
+    Tek bir rakam hiçbir şey söylemiyor — 16 F/K bir şirket için ucuz,
+    başkası için pahalı — emsal grubu ise başka bir tartışma. Sembolün
+    hesap verebileceği karşılaştırma kendi geçmişi.
+
+    `restatedFrom`, enflasyon muhasebeli ilk raporun piyasaya ulaştığı gün.
+    Öncesinde kârlar hiç enflasyon düzeltmesi içermiyor, yani koridorun iki
+    yarısı kârı farklı ölçüyor; okura tek bir rejim varsayması bırakılmıyor,
+    söyleniyor.
+    """
+    symbol = symbol.upper()
+    now = time.time()
+    cached = _pe_band_cache.get(symbol)
+    if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
+        return cached[1]
+
+    def answer(result: dict) -> dict:
+        _pe_band_cache[symbol] = (now, result)
+        return result
+
+    ttm_eps = get_ttm_eps(symbol)
+    if ttm_eps.empty:
+        return answer({"symbol": symbol, "supported": False, "reason": "noEarnings"})
+
+    df = price_cache.query_range(
+        symbol, ttm_eps.index[0].strftime("%Y-%m-%d"), datetime.now().strftime("%Y-%m-%d")
+    )
+    if df.empty:
+        return answer({"symbol": symbol, "supported": False, "reason": "noPrices"})
+
+    df = attach_pe_series(df.reset_index(), ttm_eps)
+    series = df.set_index("Date")["PE"].dropna()
+    if len(series) < PE_BAND_MIN_DAYS:
+        return answer({"symbol": symbol, "supported": False, "reason": "tooShort"})
+
+    value = float(series.iloc[-1])
+    sorted_values = series.sort_values()
+    below = int((sorted_values < value).sum())
+
+    return answer(
+        {
+            "symbol": symbol,
+            "supported": True,
+            "points": len(series),
+            "from": series.index[0].strftime("%Y-%m-%d"),
+            "to": series.index[-1].strftime("%Y-%m-%d"),
+            "low": float(series.quantile(0.05)),
+            "p25": float(series.quantile(0.25)),
+            "median": float(series.median()),
+            "p75": float(series.quantile(0.75)),
+            "high": float(series.quantile(0.95)),
+            "min": float(series.min()),
+            "max": float(series.max()),
+            "value": value,
+            "percentile": round(below / (len(series) - 1) * 100),
+            "restatedFrom": _restated_from(symbol),
+        }
+    )
+
+
+def _restated_from(symbol: str) -> str | None:
+    """The first session that could trade on an inflation-accounted report."""
+    try:
+        reports = kap.financial_reports(symbol, _period_year(statements.TMS29_FROM))
+    except Exception:
+        return None
+    first = next((r for r in reports if r["period"] >= statements.TMS29_FROM), None)
+    return kap.tradable_from(first["published"]).isoformat() if first else None
+
+
+def _period_year(period: str) -> int:
+    return int(period[:4])
 
 
 def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bool, bool]:

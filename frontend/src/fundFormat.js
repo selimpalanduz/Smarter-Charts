@@ -153,6 +153,29 @@ export function band(values) {
   };
 }
 
+// The same reading for a band the backend already reduced to percentiles,
+// so a ratio measured daily on the server and a row measured quarterly here
+// draw the same bar. Clamped because the ends are the 5th and 95th
+// percentile: today's value can sit outside them.
+// Backend'in zaten yüzdeliklere indirdiği bir bant için aynı okuma, ki
+// sunucuda günlük ölçülen bir oran ile burada çeyreklik ölçülen bir satır
+// aynı çubuğu çizsin. Uçlar %5 ve %95 olduğu için sınırlanıyor: bugünkü
+// değer onların dışında kalabilir.
+export function bandFromStats(stats) {
+  if (!stats?.supported) return null;
+  const span = stats.high - stats.low || 1;
+  const at = (v) => `${Math.min(100, Math.max(0, ((v - stats.low) / span) * 100)).toFixed(1)}%`;
+  return {
+    low: stats.low,
+    high: stats.high,
+    value: stats.value,
+    percentile: stats.percentile,
+    markLeft: at(stats.value),
+    bandLeft: at(stats.p25),
+    bandWidth: `${(((stats.p75 - stats.p25) / span) * 100).toFixed(1)}%`,
+  };
+}
+
 // Tint strength for a ratio cell: its place in the row's own range.
 // Oran hücresinin zemin tonu: satırın kendi aralığındaki yeri.
 export function tintFor(value, values) {
