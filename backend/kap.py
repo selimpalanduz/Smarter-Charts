@@ -7,7 +7,7 @@ KAP bildirimleri: yıllık listeler ve açıklama metinleri, SQLite'ta önbellek
 import re
 import sqlite3
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -18,6 +18,11 @@ DB_PATH = Path(__file__).parent / "data" / "kap.db"
 # Seconds between refreshes of the current year's list.
 # Güncel yılın listesinin tazelenme aralığı (saniye).
 CURRENT_YEAR_TTL = 600
+# A report filed before this hour can be traded on the same day; anything
+# later first meets the market at the next session.
+# Bu saatten önce verilen rapora aynı gün işlem yapılabilir; daha sonrası
+# piyasayla ilk kez ertesi seansta buluşur.
+MARKET_OPEN_HOUR = 10
 MAX_TEXT_CHARS = 700
 
 # Routine ODA subjects that don't explain price moves.
@@ -73,6 +78,20 @@ def _connect() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY,
             text TEXT
         );
+        CREATE TABLE IF NOT EXISTS reports (
+            symbol TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            quarter INTEGER NOT NULL,
+            published TEXT NOT NULL,
+            disclosure_id INTEGER,
+            PRIMARY KEY (symbol, year, quarter)
+        );
+        CREATE TABLE IF NOT EXISTS fetched_report_years (
+            symbol TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            fetched_at REAL NOT NULL,
+            PRIMARY KEY (symbol, year)
+        );
         """
     )
     return conn
@@ -115,6 +134,11 @@ def query_year(client, member_oid: str, year: int, disclosure_class: str = "") -
     return items if isinstance(items, list) else None
 
 
+def tradable_from(published: datetime) -> date:
+    """The first session that could act on a disclosure published at this moment."""
+    return published.date() if published.hour < MARKET_OPEN_HOUR else published.date() + timedelta(days=1)
+
+
 def _is_relevant(item: dict) -> bool:
     cls, subject = item.get("disclosureClass"), item.get("subject")
     if cls == "FR":
@@ -122,9 +146,9 @@ def _is_relevant(item: dict) -> bool:
     return cls == "ODA" and subject not in EXCLUDED_SUBJECTS
 
 
-def _year_is_fresh(conn: sqlite3.Connection, symbol: str, year: int) -> bool:
+def _year_is_fresh(conn: sqlite3.Connection, symbol: str, year: int, table: str = "fetched_years") -> bool:
     row = conn.execute(
-        "SELECT fetched_at FROM fetched_years WHERE symbol = ? AND year = ?", (symbol, year)
+        f"SELECT fetched_at FROM {table} WHERE symbol = ? AND year = ?", (symbol, year)
     ).fetchone()
     if row is None:
         return False
@@ -160,8 +184,95 @@ def _refresh_year(conn: sqlite3.Connection, kap, member_oid: str, symbol: str, y
             )
         )
     conn.executemany("INSERT OR REPLACE INTO disclosures VALUES (?, ?, ?, ?, ?, ?)", rows)
-    conn.execute("INSERT OR REPLACE INTO fetched_years VALUES (?, ?, ?)", (symbol, year, time.time()))
+
+    # A correction carries the same (year, quarter); the earliest publication is
+    # the one the market traded on, so a later row never overwrites it.
+    # Düzeltme aynı (yıl, çeyrek) ile gelir; piyasanın işlem yaptığı an ilk
+    # yayım anıdır, sonraki satır onu ezmez.
+    conn.executemany(
+        """
+        INSERT INTO reports VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (symbol, year, quarter) DO UPDATE SET
+            published = excluded.published,
+            disclosure_id = excluded.disclosure_id
+        WHERE excluded.published < reports.published
+        """,
+        _report_rows(items, symbol),
+    )
+    stamp = time.time()
+    conn.execute("INSERT OR REPLACE INTO fetched_years VALUES (?, ?, ?)", (symbol, year, stamp))
+    conn.execute("INSERT OR REPLACE INTO fetched_report_years VALUES (?, ?, ?)", (symbol, year, stamp))
     conn.commit()
+
+
+def _report_rows(items: list[dict], symbol: str) -> list[tuple]:
+    """
+    A financial report's (period, publication) pairs. A calendar-year query
+    returns the reports PUBLISHED that year, so a year's Q4 arrives with the
+    next year's query — the caller's year range has to allow for that.
+
+    Bir mali tablonun (dönem, yayım) çiftleri. Takvim yılı sorgusu o yıl
+    YAYIMLANAN raporları döndürür, yani bir yılın Q4'ü ertesi yılın
+    sorgusuyla gelir — çağıranın yıl aralığı bunu hesaba katmalı.
+    """
+    rows = []
+    for item in items:
+        if item.get("disclosureClass") != "FR" or item.get("subject") != "Finansal Rapor":
+            continue
+        try:
+            year, quarter = int(item["year"]), int(item["period"])
+            published = datetime.strptime(item["publishDate"], "%d.%m.%Y %H:%M:%S")
+            disclosure_id = int(item["disclosureIndex"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not 1 <= quarter <= 4:
+            continue
+        rows.append((symbol, year, quarter, published.strftime("%Y-%m-%d %H:%M:%S"), disclosure_id))
+    return rows
+
+
+def financial_reports(symbol: str, from_year: int) -> list[dict]:
+    """
+    When each financial report first reached KAP, oldest first. This is the
+    only honest date to attach a figure to: until it is published, nobody
+    trading could know it.
+
+    Her mali tablonun KAP'a ilk düştüğü an, eskiden yeniye. Bir rakamı
+    bağlayabileceğimiz tek dürüst tarih bu: yayımlanana kadar işlem yapan
+    hiç kimse onu bilemez.
+    """
+    symbol = symbol.upper()
+    conn = _connect()
+    try:
+        years = range(from_year, datetime.now().year + 1)
+        stale = [y for y in years if not _year_is_fresh(conn, symbol, y, "fetched_report_years")]
+        if stale:
+            kap = get_kap_provider()
+            member_oid = kap.get_member_oid(symbol)
+            if member_oid:
+                for year in stale:
+                    _refresh_year(conn, kap, member_oid, symbol, year)
+
+        rows = conn.execute(
+            """
+            SELECT year, quarter, published, disclosure_id FROM reports
+            WHERE symbol = ? AND year >= ? ORDER BY published
+            """,
+            (symbol, from_year),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "year": r[0],
+            "quarter": r[1],
+            "period": f"{r[0]}Q{r[1]}",
+            "published": datetime.strptime(r[2], "%Y-%m-%d %H:%M:%S"),
+            "url": disclosure_url(r[3]) if r[3] else None,
+        }
+        for r in rows
+    ]
 
 
 def get_disclosures(symbol: str, from_year: int) -> list[dict]:

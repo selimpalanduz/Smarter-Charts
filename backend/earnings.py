@@ -17,53 +17,16 @@ import time
 from datetime import datetime, timedelta
 
 import borsapy as bp
-from borsapy._providers.kap import get_kap_provider
 
+import kap
 import price_cache
-from kap import query_year
 from data_provider import get_quarterly_net_income
 
 YEARS_BACK = 3
 REACTION_DAYS = 5
-# Announcements before this hour get a same-day price reaction.
-# Bu saatten önceki açıklamaya fiyat aynı gün tepki verir.
-MARKET_OPEN_HOUR = 10
 CACHE_TTL = 3600
 
 _cache: dict[str, tuple[float, dict]] = {}
-
-
-def _fetch_announcements(symbol: str) -> list[dict]:
-    """
-    The first 'Financial Report' disclosure for each (year, quarter); corrections are dropped.
-
-    Her (yıl, çeyrek) için ilk 'Finansal Rapor' bildirimi; düzeltmeler elenir.
-    """
-    kap = get_kap_provider()
-    member_oid = kap.get_member_oid(symbol)
-    if not member_oid:
-        return []
-
-    this_year = datetime.now().year
-    by_period: dict[tuple[int, int], dict] = {}
-    for year in range(this_year - YEARS_BACK, this_year + 1):
-        for item in query_year(kap._client, member_oid, year, "FR") or []:
-            if item.get("subject") != "Finansal Rapor":
-                continue
-            try:
-                key = (int(item["year"]), int(item["period"]))
-                published = datetime.strptime(item["publishDate"], "%d.%m.%Y %H:%M:%S")
-            except (KeyError, TypeError, ValueError):
-                continue
-            if key not in by_period or published < by_period[key]["published"]:
-                by_period[key] = {
-                    "published": published,
-                    "year": key[0],
-                    "quarter": key[1],
-                    "url": f"https://www.kap.org.tr/tr/Bildirim/{item.get('disclosureIndex')}",
-                }
-
-    return sorted(by_period.values(), key=lambda a: a["published"])
 
 
 def _price_reaction(closes: list[tuple[str, float]], published: datetime) -> tuple[str | None, float | None, int]:
@@ -72,8 +35,7 @@ def _price_reaction(closes: list[tuple[str, float]], published: datetime) -> tup
 
     (tepki günü, % değişim, kaç işlem günü kullanıldı).
     """
-    effective = published.date() if published.hour < MARKET_OPEN_HOUR else published.date() + timedelta(days=1)
-    effective_str = effective.isoformat()
+    effective_str = kap.tradable_from(published).isoformat()
 
     idx = next((i for i, (d, _) in enumerate(closes) if d >= effective_str), None)
     if idx is None or idx == 0:
@@ -116,7 +78,7 @@ def get_earnings(symbol: str) -> dict:
     if cached and (now - cached[0]) < CACHE_TTL:
         return cached[1]
 
-    announcements = _fetch_announcements(symbol)
+    announcements = kap.financial_reports(symbol, datetime.now().year - YEARS_BACK)
     try:
         net_income = get_quarterly_net_income(symbol)
     except Exception:

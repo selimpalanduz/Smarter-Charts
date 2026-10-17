@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import borsapy as bp
 import pandas as pd
 import numpy as np
+import kap
 import price_cache
 from fundamentals import schema, statements
 
@@ -89,14 +90,79 @@ def get_ttm_eps(symbol: str) -> pd.Series:
         return result
 
     quarterly_eps = standalone / shares
-    ttm_eps = quarterly_eps.rolling(4).sum()
+    ttm_eps = quarterly_eps.rolling(4).sum().dropna()
 
-    dates = [pd.Period(col, freq="Q").end_time.normalize() for col in ttm_eps.index]
-    ttm_eps.index = pd.DatetimeIndex(dates)
-
-    result = ttm_eps.dropna()
+    result = _index_by_publication(symbol, ttm_eps)
     _fundamentals_cache[symbol] = (now, result)
     return result
+
+
+def _index_by_publication(symbol: str, ttm_eps: pd.Series) -> pd.Series:
+    """
+    Moves a quarterly series from the quarter's end to the first session that
+    could trade on it.
+
+    Dating on the quarter's end instead gives every past P/E a figure the
+    market had not seen yet — six weeks early typically, 134 days for BIMAS
+    2023Q4 — so the line reacts before the news, in the direction the news
+    turned out to be.
+
+    A period KAP has no record of falls back to this symbol's own median lag,
+    since a habitually late filer stays late. If KAP gave nothing at all the
+    series is dropped rather than guessed.
+
+    Çeyreklik seriyi dönem sonundan, üzerine işlem yapılabilen ilk seansa
+    taşır.
+
+    Dönem sonuna tarihlemek her geçmiş F/K'ya piyasanın o gün görmediği bir
+    rakamı veriyor — tipik olarak altı hafta, BIMAS 2023Q4'te 134 gün önceden
+    — yani çizgi haberden önce, haberin çıktığı yönde tepki veriyor.
+
+    KAP'ta kaydı olmayan dönem sembolün kendi medyan gecikmesine düşüyor;
+    alışkanlıkla geç veren şirket geç vermeye devam ediyor. KAP'tan hiçbir şey
+    gelmediyse seri tahmin edilmek yerine bırakılıyor.
+    """
+    if ttm_eps.empty:
+        return ttm_eps
+
+    try:
+        from_year = int(str(ttm_eps.index[0])[:4])
+        published = {r["period"]: r["published"] for r in kap.financial_reports(symbol, from_year)}
+    except Exception:
+        published = {}
+    if not published:
+        return pd.Series(dtype=float)
+
+    lags = [
+        pd.Timestamp(when) - pd.Period(period, freq="Q").end_time.normalize()
+        for period, when in published.items()
+    ]
+    median_lag = pd.Series(lags).median()
+
+    dated = []
+    for period, value in ttm_eps.items():
+        when = published.get(period)
+        if when is None:
+            when = pd.Period(period, freq="Q").end_time.normalize() + median_lag
+        dated.append((pd.Timestamp(kap.tradable_from(pd.Timestamp(when).to_pydatetime())), value))
+
+    # A late filing can reach KAP after the next quarter's. Reading the series
+    # in date order would then step back to the older figure, so a period is
+    # kept only while it precedes every later one.
+    # Geç verilen bir rapor sonraki çeyrekten sonra KAP'a düşebilir. Seriyi
+    # tarih sırasıyla okumak o zaman eski rakama geri döner, bu yüzden bir
+    # dönem ancak kendinden sonraki hepsinden önce geldiği sürece tutuluyor.
+    kept = []
+    floor = None
+    for date, value in reversed(dated):
+        if floor is None or date < floor:
+            kept.append((date, value))
+            floor = date
+
+    kept.reverse()
+    return pd.Series(
+        [v for _, v in kept], index=pd.DatetimeIndex([d for d, _ in kept]), dtype=float
+    )
 
 
 def attach_pe_series(df: pd.DataFrame, ttm_eps: pd.Series) -> pd.DataFrame:
