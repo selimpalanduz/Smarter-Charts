@@ -423,7 +423,7 @@ def _undo_forward_restatement(values: dict[str, dict[str, float]]) -> list[str]:
     """
     periods = sorted({period for series in values.values() for period in series})
     index = inflation.cpi_index()
-    if not index:
+    if not periods or not index:
         return []
 
     restates = _restates_comparatives(values, periods, index)
@@ -536,6 +536,31 @@ def classify(symbol: str) -> str:
     return "financial" if values else "unknown"
 
 
+def _unsupported(symbol: str, currency: str, real: bool) -> dict:
+    """
+    The answer for a symbol this schema holds nothing for, with its sector
+    recorded so the probe is not repeated.
+
+    Bu şemada hiçbir şeyi olmayan sembolün cevabı; sektörü kaydediliyor ki
+    yoklama tekrarlanmasın.
+    """
+    kind = classify(symbol)
+    store.remember_sector(symbol, kind)
+    return {
+        "symbol": symbol.upper(),
+        "currency": currency,
+        "basis": f"{currency.lower()}-{'real' if real else 'nominal'}",
+        "target": None,
+        "real": real,
+        "items": {},
+        "unitDropped": [],
+        "noFactor": [],
+        "forwardRestated": [],
+        "supported": False,
+        "sector": kind,
+    }
+
+
 def quarterly(
     symbol: str,
     quarters: int = QUARTERS,
@@ -564,6 +589,14 @@ def quarterly(
     currency = CURRENCY_USD if str(currency).upper() == CURRENCY_USD else CURRENCY_TRY
     real = real and currency == CURRENCY_TRY
     values, labels = rows(symbol, quarters, refresh=refresh, currency=currency)
+    # Nothing on this schema: banks, insurers and the symbols the provider
+    # has no statements for. Answered before anything reads a column, since
+    # every step below assumes at least one period.
+    # Bu şemada hiçbir şeyi olmayanlar: banka, sigorta ve sağlayıcıda mali
+    # tablosu olmayan semboller. Herhangi bir kolon okunmadan cevaplanıyor,
+    # çünkü aşağıdaki her adım en az bir dönem olduğunu varsayıyor.
+    if not values:
+        return _unsupported(symbol, currency, real)
     # Before anything reads a figure: a column arrives in the money of the
     # latest report carrying it. Done on the whole of what is on disk, so the
     # oldest year in the window still has the following year to look at.
@@ -655,21 +688,7 @@ def quarterly(
         items[code] = {"label": labels.get(code, ""), "kind": kind, "periods": out}
 
     if not values:
-        kind = classify(symbol)
-        store.remember_sector(symbol, kind)
-        return {
-            "symbol": symbol.upper(),
-            "currency": currency,
-            "basis": f"{currency.lower()}-{'real' if real else 'nominal'}",
-            "target": None,
-            "real": real,
-            "items": {},
-            "unitDropped": [],
-            "noFactor": [],
-            "forwardRestated": [],
-            "supported": False,
-            "sector": kind,
-        }
+        return _unsupported(symbol, currency, real)
 
     store.remember_sector(symbol, "nonfinancial")
 
