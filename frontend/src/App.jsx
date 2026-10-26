@@ -12,6 +12,7 @@ import {
   RectanglePrimitive,
   FibonacciPrimitive,
   HorizontalLinePrimitive,
+  CostProfilePrimitive,
   SRZonePrimitive,
   DailyChangePrimitive,
 } from './drawingTools.js';
@@ -290,6 +291,7 @@ const OVERLAY_GROUPS = [
   { id: 'supertrend', keys: ['supertrendUp', 'supertrendDown'] },
   { id: 'srZones', keys: [] },
   { id: 'autoFib', keys: [] },
+  { id: 'costProfile', keys: [] },
   { id: 'earnings', keys: [] },
   { id: 'moves', keys: [] },
   { id: 'anchors', keys: [] },
@@ -420,7 +422,7 @@ const PRESETS = [
   { id: 'valuation', groups: ['pe', 'pb', 'earnings'] },
 ];
 
-const OTHER_TOOL_IDS = ['srZones', 'autoFib', 'earnings', 'moves', 'anchors'];
+const OTHER_TOOL_IDS = ['srZones', 'autoFib', 'costProfile', 'earnings', 'moves', 'anchors'];
 const PANEL_SECTIONS = [
   { titleKey: 'sectionIndicators', groups: TOGGLE_GROUPS.filter((g) => !OTHER_TOOL_IDS.includes(g.id)) },
   { titleKey: 'sectionOther', groups: TOGGLE_GROUPS.filter((g) => OTHER_TOOL_IDS.includes(g.id)) },
@@ -523,6 +525,13 @@ async function fetchAnchors(symbol) {
 
 async function fetchSwing(symbol) {
   const url = `${API_BASE}/api/swing/${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchCostProfile(symbol) {
+  const url = `${API_BASE}/api/cost-profile/${symbol}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -766,6 +775,20 @@ function applySrZones(series, primitivesRef, srData, visible) {
   primitives[0]?.requestRedraw();
 }
 
+function applyCostProfile(series, primitiveRef, profile, visible, str) {
+  if (!series) return;
+  if (primitiveRef.current) {
+    series.detachPrimitive(primitiveRef.current);
+    primitiveRef.current = null;
+  }
+  if (!visible || !profile?.supported) return;
+
+  const primitive = new CostProfilePrimitive(profile, { label: str.costProfileLabel(profile.inProfitPct) });
+  series.attachPrimitive(primitive);
+  primitiveRef.current = primitive;
+  primitive.requestRedraw();
+}
+
 // The retracement over the swing the backend found. Drawn, not drawable: it
 // has no handles and is not in drawingsRef, so Del and the cursor leave it
 // alone and it is replaced wholesale when the symbol changes.
@@ -988,6 +1011,8 @@ function App() {
   const bandExtras = () => ({ peBand: peBandRef.current, pbBand: pbBandRef.current });
   const swingRef = useRef(null);
   const autoFibRef = useRef(null);
+  const costProfileRef = useRef(null);
+  const costProfilePrimitiveRef = useRef(null);
   const srZonesRef = useRef(null);
   const srPrimitivesRef = useRef([]);
   const anchorsRef = useRef(null);
@@ -1060,6 +1085,11 @@ function App() {
 
     if (groupId === 'autoFib') {
       applyAutoFib(seriesMapRef.current.candle, autoFibRef, swingRef.current, nextVisible);
+      return;
+    }
+
+    if (groupId === 'costProfile') {
+      applyCostProfile(seriesMapRef.current.candle, costProfilePrimitiveRef, costProfileRef.current, nextVisible, STRINGS[langRef.current]);
       return;
     }
 
@@ -1137,6 +1167,7 @@ function App() {
     });
     applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, newVisibility.srZones);
     applyAutoFib(seriesMapRef.current.candle, autoFibRef, swingRef.current, newVisibility.autoFib);
+    applyCostProfile(seriesMapRef.current.candle, costProfilePrimitiveRef, costProfileRef.current, newVisibility.costProfile, STRINGS[langRef.current]);
     anchorsVisibleRef.current = newVisibility.anchors;
     applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, newVisibility.anchors, STRINGS[langRef.current]);
     setMaVisible(newVisibility.ma);
@@ -1525,10 +1556,12 @@ function App() {
         if (cancelled) return;
         earningsRef.current = earningsData;
         setEarningsNext(earningsData?.next ?? null);
-        const [peData, pbData] = await Promise.all([
+        const [peData, pbData, profileData] = await Promise.all([
           fetchBand(symbol, 'pe').catch(() => null),
           fetchBand(symbol, 'pb').catch(() => null),
+          fetchCostProfile(symbol).catch(() => null),
         ]);
+        costProfileRef.current = profileData;
         if (cancelled) return;
         peBandRef.current = peData;
         pbBandRef.current = pbData;
@@ -1565,6 +1598,7 @@ function App() {
         renderAllSeries(seriesMapRef.current, loadedData);
         applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
         applyAutoFib(seriesMapRef.current.candle, autoFibRef, swingRef.current, visibility.autoFib);
+        applyCostProfile(seriesMapRef.current.candle, costProfilePrimitiveRef, costProfileRef.current, visibility.costProfile, STRINGS[langRef.current]);
         earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
         earningsVisibleRef.current = visibility.earnings;
         movesVisibleRef.current = visibility.moves;
@@ -1722,6 +1756,11 @@ function App() {
     renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     refreshMarkers();
     applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
+    // The histogram reads the palette as it paints, so it is rebuilt with
+    // the rest rather than left holding the old theme's tints.
+    // Histogram paletini boyarken okuyor, bu yüzden eski temanın tonlarıyla
+    // bırakılmak yerine diğerleriyle birlikte yeniden kuruluyor.
+    applyCostProfile(seriesMapRef.current.candle, costProfilePrimitiveRef, costProfileRef.current, visibility.costProfile, STRINGS[langRef.current]);
     applyAnchors(seriesMapRef.current.candle, anchorLinesRef, anchorsRef.current, visibility.anchors, STRINGS[langRef.current]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [darkMode]);

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from data_provider import get_price_history, pb_band, pe_band
 from volume_scanner import get_scan
 from sr_zones import get_last_swing, get_sr_zones
+from cost_profile import cost_profile
 from earnings import get_earnings
 from pattern_search import find_similar
 from moves import get_moves
@@ -101,6 +102,15 @@ def get_pe_band(symbol: str):
     """Where the symbol's P/E stands in its own history."""
     try:
         return pe_band(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/cost-profile/{symbol}")
+def get_cost_profile(symbol: str):
+    """Traded volume laid out by price, and how much of it is above water."""
+    try:
+        return cost_profile(symbol)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 

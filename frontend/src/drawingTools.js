@@ -17,6 +17,16 @@ class BasePaneView {
   }
 }
 
+// Same view, but painted under the series instead of over it — for fills
+// solid enough to hide a candle.
+// Aynı görünüm, serinin üstüne değil altına boyanıyor — bir mumu örtecek
+// kadar koyu dolgular için.
+class UnderlayPaneView extends BasePaneView {
+  zOrder() {
+    return 'bottom';
+  }
+}
+
 function drawHandle(ctx, x, y, color) {
   ctx.save();
   ctx.beginPath();
@@ -518,5 +528,91 @@ class DailyChangeAxisView {
   }
   tickVisible() {
     return false;
+  }
+}
+
+
+// The traded volume of the last two years laid out by price: a horizontal
+// histogram pinned to the left edge, bars below the last close in the up
+// colour and above it in the down colour.
+//
+// Drawn, not drawable — no handles, not in drawingsRef, replaced wholesale
+// when the symbol changes, the same as the automatic Fibonacci.
+//
+// It marks nothing as support or resistance and carries no such colouring
+// of its own: the two tints say "cheaper than today" and "dearer than
+// today", which is what the figures underneath actually mean.
+//
+// Son iki yılın işlem hacminin fiyata göre dizilişi: sol kenara sabitlenmiş
+// yatay histogram; son kapanışın altındaki çubuklar yükseliş renginde,
+// üstündekiler düşüş renginde.
+//
+// Çizilen bir şey, çizilebilir değil — tutamağı yok, drawingsRef'te durmuyor,
+// sembol değişince toptan yenileniyor; otomatik Fibonacci gibi.
+//
+// Hiçbir yeri destek ya da direnç diye işaretlemiyor ve kendinden öyle bir
+// renklendirme taşımıyor: iki ton "bugünden ucuz" ve "bugünden pahalı"
+// diyor, altındaki rakamların gerçekten anlattığı şey bu.
+export class CostProfilePrimitive {
+  constructor(profile, options = {}) {
+    this._profile = profile;
+    this._options = { widthFraction: 0.22, label: '', ...options };
+    this._paneViews = [new UnderlayPaneView(this)];
+    this._series = null;
+    this._requestUpdate = null;
+  }
+  attached({ series, requestUpdate }) {
+    this._series = series;
+    this._requestUpdate = requestUpdate;
+  }
+  detached() {
+    this._requestUpdate?.();
+    this._series = null;
+    this._requestUpdate = null;
+  }
+  requestRedraw() {
+    this._requestUpdate?.();
+  }
+  updateAllViews() {
+    this._paneViews.forEach((v) => v.update());
+  }
+  paneViews() {
+    return this._paneViews;
+  }
+  _draw(ctx, mediaSize) {
+    if (!this._series) return;
+    const bins = this._profile?.bins ?? [];
+    if (!bins.length) return;
+
+    const heaviest = Math.max(...bins.map((b) => b.share));
+    if (!(heaviest > 0)) return;
+    const maxWidth = mediaSize.width * this._options.widthFraction;
+    const close = this._profile.close;
+
+    ctx.save();
+    bins.forEach((bin) => {
+      const yTop = this._series.priceToCoordinate(bin.high);
+      const yBottom = this._series.priceToCoordinate(bin.low);
+      if (yTop === null || yBottom === null) return;
+
+      // One pixel of gap keeps the rows legible; below that the bars merge
+      // into a block and the shape is lost.
+      // Bir piksellik boşluk satırları okunur tutuyor; altında çubuklar tek
+      // bir bloğa dönüşüp biçim kayboluyor.
+      const height = Math.max(1, yBottom - yTop - 1);
+      const width = (bin.share / heaviest) * maxWidth;
+      ctx.fillStyle = bin.high <= close ? colors().upSoft : colors().downSoft;
+      ctx.globalAlpha = 0.5;
+      ctx.fillRect(0, yTop, width, height);
+    });
+
+    if (this._options.label) {
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = colors().chartText;
+      ctx.font = '10px ui-monospace, Consolas, monospace';
+      ctx.textBaseline = 'top';
+      ctx.fillText(this._options.label, 4, 4);
+    }
+    ctx.restore();
   }
 }

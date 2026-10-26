@@ -52,6 +52,7 @@ export const STRINGS = {
       supertrend: 'Supertrend',
       srZones: 'Support/Resistance',
       autoFib: 'Auto Fibonacci',
+      costProfile: 'Cost Profile',
       earnings: 'Earnings',
       moves: 'Sharp Moves',
       anchors: 'Psychological Levels',
@@ -69,6 +70,7 @@ export const STRINGS = {
     groupHints: {
       srZones: 'Nearest clear swing highs/lows (Nx = times tested). A visual reference: in backtests these levels did not hold price more often than random levels.',
       autoFib: 'Retracement levels over the latest prominent swing, found automatically. Draw your own with the F tool when you mean a different move.',
+      costProfile: 'Two years of traded volume laid out by price, each day’s volume spread evenly across its range. Green traded below today’s close, red above it. It shows where trading happened: it marks nothing as support or resistance, and a heavy shelf is not a forecast.',
     },
     drawingTools: {
       horizontal: 'Horizontal Line',
@@ -241,6 +243,7 @@ export const STRINGS = {
     fundPeBandNote: (years, restated) =>
       `Daily readings over ${years} years; the ends are the 5th and 95th percentile, the lighter block the middle half.`
       + (restated ? ` Earnings before ${restated} carry no inflation adjustment, so the two halves measure profit differently.` : ''),
+    costProfileLabel: (pct) => `${pct.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% of volume traded below today`,
     fundPbBandTitle: 'P/B against its own history',
     fundPbBandNote: (years, restated) =>
       `Daily readings over ${years} years; the ends are the 5th and 95th percentile, the lighter block the middle half.`
@@ -334,6 +337,7 @@ export const STRINGS = {
       supertrend: 'Supertrend',
       srZones: 'Destek/Direnç',
       autoFib: 'Otomatik Fibonacci',
+      costProfile: 'Maliyet Profili',
       earnings: 'Bilançolar',
       moves: 'Sert Hareketler',
       anchors: 'Psikolojik Seviyeler',
@@ -351,6 +355,7 @@ export const STRINGS = {
     groupHints: {
       srZones: 'En yakın belirgin tepe/dipler (Nx = test sayısı). Görsel referanstır: geriye dönük testlerde bu seviyeler fiyatı rastgele seviyelerden daha sık tutmadı.',
       autoFib: 'Kendiliğinden bulunan en son belirgin salınımın üzerindeki düzeltme seviyeleri. Başka bir hareketi kastediyorsan F aracıyla kendin çiz.',
+      costProfile: 'İki yıllık işlem hacminin fiyata göre dizilişi; her günün hacmi o günün en yüksek-en düşük aralığına eşit dağıtılıyor. Yeşil bugünkü kapanışın altında, kırmızı üstünde işlem gördü. İşlemin nerede olduğunu gösterir: hiçbir yeri destek ya da direnç diye işaretlemez, ağır bir yığın tahmin değildir.',
     },
     drawingTools: {
       horizontal: 'Yatay Çizgi',
@@ -518,6 +523,9 @@ export const STRINGS = {
     fundPeBandNote: (years, restated) =>
       `${years} yılın günlük okumaları; uçlar %5 ve %95 yüzdelikleri, açık blok ortadaki yarı.`
       + (restated ? ` ${restated} öncesindeki kârlar enflasyon düzeltmesi içermiyor, yani iki yarı kârı farklı ölçüyor.` : ''),
+    // Türkçe ek sayının okunuşuna uyuyor ("%78,6'sı" ama "%0,7'si"), bu
+    // yüzden cümle hiç ek istemeyecek şekilde çevrildi.
+    costProfileLabel: (pct) => `bugünün altında işlem gören hacim: %${pct.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`,
     fundPbBandTitle: 'PD/DD kendi geçmişine karşı',
     fundPbBandNote: (years, restated) =>
       `${years} yılın günlük okumaları; uçlar %5 ve %95 yüzdelikleri, açık blok ortadaki yarı.`
