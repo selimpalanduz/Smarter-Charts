@@ -374,6 +374,28 @@ const DEDICATED_GROUPS = [
     },
     priceLineTargetKey: 'pe',
   },
+  {
+    id: 'pb', stretch: 1,
+    series: [
+      { key: 'pb', type: LineSeries, options: { color: '#7c3aed', lineWidth: 1.5, title: 'P/B' }, data: (rows) => lineData(rows, 'PB') },
+    ],
+    // Book value is a balance, not a flow: it does not pass through zero
+    // between quarters, so this corridor stays readable on the companies
+    // whose P/E band is too wide to tell anything.
+    // Defter değeri bir akış değil bakiye: çeyrekler arasında sıfırın içinden
+    // geçmiyor, bu yüzden F/K bandı hiçbir şey söyleyemeyecek kadar geniş olan
+    // şirketlerde bu koridor okunur kalıyor.
+    priceLinesFrom: (extras) => {
+      const band = extras?.pbBand;
+      if (!band?.supported) return [];
+      return [
+        { price: band.p75, color: '#64748b', lineStyle: 1, lineWidth: 1, title: '75%' },
+        { price: band.median, color: '#64748b', lineStyle: 2, lineWidth: 1, title: '50%' },
+        { price: band.p25, color: '#64748b', lineStyle: 1, lineWidth: 1, title: '25%' },
+      ];
+    },
+    priceLineTargetKey: 'pb',
+  },
 ];
 
 // rsiDiv has no pane of its own; it draws inside the RSI pane.
@@ -395,7 +417,7 @@ const PRESETS = [
   { id: 'momentum', groups: ['rsi', 'macd', 'volume'] },
   { id: 'trend', groups: ['ma', 'supertrend', 'adx'] },
   { id: 'volatility', groups: ['bb', 'atr'] },
-  { id: 'valuation', groups: ['pe', 'earnings'] },
+  { id: 'valuation', groups: ['pe', 'pb', 'earnings'] },
 ];
 
 const OTHER_TOOL_IDS = ['srZones', 'autoFib', 'earnings', 'moves', 'anchors'];
@@ -506,8 +528,8 @@ async function fetchSwing(symbol) {
   return res.json();
 }
 
-async function fetchPeBand(symbol) {
-  const url = `${API_BASE}/api/pe-band/${symbol}`;
+async function fetchBand(symbol, kind) {
+  const url = `${API_BASE}/api/${kind}-band/${symbol}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -820,13 +842,45 @@ function rebuildDedicatedPanes(chart, seriesMap, currentVisibility, extras) {
   DEDICATED_GROUPS.forEach((group) => {
     if (!currentVisibility[group.id]) return;
 
+    const priceLines = [...(group.priceLines ?? []), ...(group.priceLinesFrom?.(extras) ?? [])];
+    const marks = priceLines.map((line) => line.price);
+
+    // The pane has to scale to its reference lines as well as its own line.
+    // Without this a symbol sitting near the bottom of its own history
+    // pushes the median and the upper quartile off the top — and being far
+    // from them is exactly what the reader came for. THYAO's P/B at the 7th
+    // percentile showed the 25% line and nothing else. It goes in at series
+    // creation: the provider is read when the series is built, so applying
+    // it afterwards leaves the old scale in place.
+    // Panelin kendi çizgisi kadar referans çizgilerine de ölçeklenmesi
+    // gerekiyor. Bu olmadan kendi geçmişinin dibine yakın duran sembol
+    // ortancayı ve üst çeyrekliği yukarıdan taşırıyor — oysa onlardan uzak
+    // olması okurun görmeye geldiği şeyin kendisi. THYAO'nun %7'lik dilimdeki
+    // PD/DD'sinde %25 çizgisinden başkası görünmüyordu. Seri kurulurken
+    // veriliyor: sağlayıcı seri inşa edilirken okunuyor, sonradan uygulamak
+    // eski ölçeği yerinde bırakıyor.
+    const holdMarks = (key) => (marks.length && key === group.priceLineTargetKey
+      ? {
+          autoscaleInfoProvider: (original) => {
+            const base = original();
+            const range = base?.priceRange;
+            return {
+              ...(base ?? {}),
+              priceRange: {
+                minValue: Math.min(...marks, range?.minValue ?? Infinity),
+                maxValue: Math.max(...marks, range?.maxValue ?? -Infinity),
+              },
+            };
+          },
+        }
+      : {});
+
     group.series.forEach(({ key, type, options, visibleWhen }) => {
       const visible = visibleWhen ? Boolean(currentVisibility[visibleWhen]) : true;
-      seriesMap[key] = chart.addSeries(type, { ...options, visible }, nextIndex);
+      seriesMap[key] = chart.addSeries(type, { ...options, visible, ...holdMarks(key) }, nextIndex);
     });
     chart.panes()[nextIndex].setStretchFactor(group.stretch);
 
-    const priceLines = [...(group.priceLines ?? []), ...(group.priceLinesFrom?.(extras) ?? [])];
     if (priceLines.length) {
       const target = seriesMap[group.priceLineTargetKey];
       priceLines.forEach((line) => target.createPriceLine(line));
@@ -928,6 +982,10 @@ function App() {
   const [visibility, setVisibility] = useState(() => Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, false])));
 
   const peBandRef = useRef(null);
+  const pbBandRef = useRef(null);
+  // What the dedicated panes read their flat percentile lines from.
+  // Panellerin düz yüzdelik çizgilerini okuduğu yer.
+  const bandExtras = () => ({ peBand: peBandRef.current, pbBand: pbBandRef.current });
   const swingRef = useRef(null);
   const autoFibRef = useRef(null);
   const srZonesRef = useRef(null);
@@ -1028,7 +1086,7 @@ function App() {
       if (nextVisible && !visibility.rsi) {
         newVisibility.rsi = true;
         setVisibility(newVisibility);
-        rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, { peBand: peBandRef.current });
+        rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, bandExtras());
         applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
         renderAllSeries(seriesMapRef.current, loadedDataRef.current);
       } else {
@@ -1052,7 +1110,7 @@ function App() {
 
     const isDedicated = DEDICATED_GROUPS.some((g) => g.id === groupId);
     if (isDedicated) {
-      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, { peBand: peBandRef.current });
+      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, bandExtras());
       applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
       renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     } else {
@@ -1091,7 +1149,7 @@ function App() {
 
     const chart = chartRef.current;
     if (chart) {
-      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, { peBand: peBandRef.current });
+      rebuildDedicatedPanes(chart, seriesMapRef.current, newVisibility, bandExtras());
       applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
       renderAllSeries(seriesMapRef.current, loadedDataRef.current);
     }
@@ -1467,9 +1525,13 @@ function App() {
         if (cancelled) return;
         earningsRef.current = earningsData;
         setEarningsNext(earningsData?.next ?? null);
-        const bandData = await fetchPeBand(symbol).catch(() => null);
+        const [peData, pbData] = await Promise.all([
+          fetchBand(symbol, 'pe').catch(() => null),
+          fetchBand(symbol, 'pb').catch(() => null),
+        ]);
         if (cancelled) return;
-        peBandRef.current = bandData;
+        peBandRef.current = peData;
+        pbBandRef.current = pbData;
         const swingData = await fetchSwing(symbol).catch(() => null);
         if (cancelled) return;
         swingRef.current = swingData;
@@ -1493,7 +1555,7 @@ function App() {
         chart.panes()[0].setStretchFactor(MAIN_PANE_STRETCH);
         applyChartTheme(chart, seriesMapRef.current);
 
-        rebuildDedicatedPanes(chart, seriesMapRef.current, visibility, { peBand: peBandRef.current });
+        rebuildDedicatedPanes(chart, seriesMapRef.current, visibility, bandExtras());
         applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
 
         loadedData = data;

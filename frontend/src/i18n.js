@@ -64,6 +64,7 @@ export const STRINGS = {
       atr: 'ATR',
       obv: 'OBV',
       pe: 'P/E',
+      pb: 'P/B',
     },
     groupHints: {
       srZones: 'Nearest clear swing highs/lows (Nx = times tested). A visual reference: in backtests these levels did not hold price more often than random levels.',
@@ -83,6 +84,7 @@ export const STRINGS = {
       macdSignal: 'Signal',
       pe: 'P/E',
       peYoy: 'P/E (1y ago)',
+      pb: 'P/B',
     },
 
     volumeScan: 'Volume Scan',
@@ -239,6 +241,10 @@ export const STRINGS = {
     fundPeBandNote: (years, restated) =>
       `Daily readings over ${years} years; the ends are the 5th and 95th percentile, the lighter block the middle half.`
       + (restated ? ` Earnings before ${restated} carry no inflation adjustment, so the two halves measure profit differently.` : ''),
+    fundPbBandTitle: 'P/B against its own history',
+    fundPbBandNote: (years, restated) =>
+      `Daily readings over ${years} years; the ends are the 5th and 95th percentile, the lighter block the middle half.`
+      + (restated ? ` Book value before ${restated} carries no inflation adjustment, and the restatement lifts it by more than a quarter's profit, so the two halves measure the book differently.` : ''),
     fundValuationTitle: 'Valuation',
     fundValuationNote: (period) =>
       `The price against the statements through ${period}, as reported — the measure the market quotes. A ratio is unit-free, so the basis buttons do not change it.`,
@@ -340,6 +346,7 @@ export const STRINGS = {
       atr: 'ATR',
       obv: 'OBV',
       pe: 'F/K',
+      pb: 'PD/DD',
     },
     groupHints: {
       srZones: 'En yakın belirgin tepe/dipler (Nx = test sayısı). Görsel referanstır: geriye dönük testlerde bu seviyeler fiyatı rastgele seviyelerden daha sık tutmadı.',
@@ -359,6 +366,7 @@ export const STRINGS = {
       macdSignal: 'Sinyal',
       pe: 'F/K',
       peYoy: 'F/K (1 yıl önce)',
+      pb: 'PD/DD',
     },
 
     volumeScan: 'Hacim Taraması',
@@ -510,6 +518,10 @@ export const STRINGS = {
     fundPeBandNote: (years, restated) =>
       `${years} yılın günlük okumaları; uçlar %5 ve %95 yüzdelikleri, açık blok ortadaki yarı.`
       + (restated ? ` ${restated} öncesindeki kârlar enflasyon düzeltmesi içermiyor, yani iki yarı kârı farklı ölçüyor.` : ''),
+    fundPbBandTitle: 'PD/DD kendi geçmişine karşı',
+    fundPbBandNote: (years, restated) =>
+      `${years} yılın günlük okumaları; uçlar %5 ve %95 yüzdelikleri, açık blok ortadaki yarı.`
+      + (restated ? ` ${restated} öncesindeki defter değeri enflasyon düzeltmesi içermiyor; düzeltme onu bir çeyreğin kârından fazla yukarı taşıdığı için iki yarı defteri farklı ölçüyor.` : ''),
     fundValuationTitle: 'Değerleme',
     fundValuationNote: (period) =>
       `Fiyatın ${period} tablolarına vurulmuş hâli, raporlandığı gibi — piyasanın kullandığı ölçü. Oran birimsiz olduğu için taban düğmeleri bunu değiştirmiyor.`,

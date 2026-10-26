@@ -14,22 +14,24 @@ export function valuationUrl(symbol) {
   return `${API_BASE}/api/fundamentals/valuation/${symbol}`;
 }
 
-// The P/E measured daily against price, reduced to its own history. Shared
-// with the chart's P/E pane, which draws the same percentiles as lines.
-// Fiyata karşı günlük ölçülmüş F/K'nın kendi geçmişine indirgenmiş hâli.
-// Grafikteki F/K paneliyle ortak; o da aynı yüzdelikleri çizgi olarak çiziyor.
-export function peBandUrl(symbol) {
-  return `${API_BASE}/api/pe-band/${symbol}`;
+// A multiple measured daily against price, reduced to its own history.
+// `kind` is 'pe' or 'pb'; both answer in the same shape. Shared with the
+// chart panes, which draw the same percentiles as lines.
+// Fiyata karşı günlük ölçülmüş bir çarpanın kendi geçmişine indirgenmiş
+// hâli. `kind` 'pe' ya da 'pb'; ikisi de aynı biçimde cevap veriyor.
+// Grafik panelleriyle ortak; onlar da aynı yüzdelikleri çizgi olarak çiziyor.
+export function bandUrl(symbol, kind) {
+  return `${API_BASE}/api/${kind}-band/${symbol}`;
 }
 
-export function usePeBand(symbol) {
+export function useBand(symbol, kind) {
   const [state, setState] = useState({ data: null, loading: true });
 
   useEffect(() => {
     let cancelled = false;
     setState({ data: null, loading: true });
 
-    fetch(peBandUrl(symbol))
+    fetch(bandUrl(symbol, kind))
       .then((res) => {
         if (!res.ok) throw new Error(String(res.status));
         return res.json();
@@ -44,7 +46,7 @@ export function usePeBand(symbol) {
     return () => {
       cancelled = true;
     };
-  }, [symbol]);
+  }, [symbol, kind]);
 
   return state;
 }

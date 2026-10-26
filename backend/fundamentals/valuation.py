@@ -58,13 +58,11 @@ import time
 
 import borsapy as bp
 
-from .schema import CURRENCY_TRY, NET_INCOME
+from .schema import CURRENCY_TRY, EQUITY_PARENT, EQUITY_TOTAL, NET_INCOME
 from .statements import QUARTERS, quarterly
 from .summary import DEBT_CODES
 
 CASH = "1AA"
-EQUITY_PARENT = "2O"
-EQUITY_TOTAL = "2N"
 OPERATING_PROFIT = "3DF"
 DEPRECIATION = "4B"
 

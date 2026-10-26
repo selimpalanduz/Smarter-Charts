@@ -63,6 +63,12 @@ UNIT_UNSTABLE = {"4BC", "4BD"}
 
 REVENUE = "3C"
 NET_INCOME = "3Z"
+# Equity attributable to the parent, and the total including minority
+# interests as the fallback for reports that leave the split out.
+# Ana ortaklığa ait özkaynak; bölünmeyi vermeyen raporlar için de azınlık
+# paylarını içeren toplam yedekte duruyor.
+EQUITY_PARENT = "2O"
+EQUITY_TOTAL = "2N"
 
 
 def item_kind(code: str) -> str:

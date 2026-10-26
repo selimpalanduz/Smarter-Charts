@@ -14,8 +14,12 @@ PE_YOY_BUFFER_DAYS = 400
 MA_PERIODS = (5, 9, 12, 20, 21, 50, 100, 200)
 
 _fundamentals_cache: dict[str, tuple[float, pd.Series]] = {}
+_bvps_cache: dict[str, tuple[float, pd.Series]] = {}
 _pe_band_cache: dict[str, tuple[float, dict]] = {}
+_pb_band_cache: dict[str, tuple[float, dict]] = {}
 _net_income_cache: dict[str, tuple[float, pd.Series]] = {}
+_equity_cache: dict[str, tuple[float, pd.Series]] = {}
+_shares_cache: dict[str, tuple[float, float | None]] = {}
 # Seconds — quarterly data doesn't change more often than this.
 # Saniye — çeyreklik veri bu kadar sık değişmiyor.
 FUNDAMENTALS_CACHE_TTL = 3600
@@ -26,6 +30,7 @@ FUNDAMENTALS_CACHE_TTL = 3600
 # karşı okunabilsin. İlk yıllık toplama dördü gittiği için o kadar az nokta
 # kalıyor.
 NET_INCOME_QUARTERS = statements.QUARTERS
+EQUITY_QUARTERS = statements.QUARTERS
 
 
 def get_quarterly_net_income(symbol: str) -> pd.Series:
@@ -56,13 +61,13 @@ def get_quarterly_net_income(symbol: str) -> pd.Series:
     )
     _net_income_cache[symbol] = (now, result)
     return result
-def get_ttm_eps(symbol: str) -> pd.Series:
+def _share_count(symbol: str) -> float | None:
     """
-    TTM EPS = (net income of the last 4 actual quarters) / (current share count).
-    Share count is computed directly from `get_company_metrics()` plus the
-    cheap "last price" instead of `fast_info` — fast_info downloaded a full
-    year of price history again just to compute 52-week high/low and moving
-    averages that aren't used.
+    Shares outstanding, as market cap over the last price.
+
+    Read from `get_company_metrics()` plus the cheap "last price" instead of
+    `fast_info` — fast_info downloaded a full year of price history again
+    just to compute 52-week high/low and moving averages that aren't used.
 
     Today's count is the right one for every past bar as well, because the
     prices are bonus-adjusted: an adjusted price is the raw price divided by
@@ -74,11 +79,12 @@ def get_ttm_eps(symbol: str) -> pd.Series:
     that factor. A capital increase for cash is not adjusted this way and
     stays a known error in the older bars of a symbol that held one.
 
-    TTM EPS = (son 4 gerçek çeyreğin net kârı) / (güncel hisse sayısı).
-    Hisse sayısını `fast_info` yerine doğrudan `get_company_metrics()` +
-    ucuz "last price" ile hesaplıyoruz — fast_info, kullanmadığımız 52
-    haftalık yüksek/düşük ve hareketli ortalamaları hesaplamak için tam
-    1 yıllık fiyat geçmişini gereksiz yere bir kez daha indiriyordu.
+    Hisse sayısı: piyasa değeri bölü son fiyat.
+
+    `fast_info` yerine `get_company_metrics()` + ucuz "last price" ile
+    okunuyor — fast_info, kullanmadığımız 52 haftalık yüksek/düşük ve
+    hareketli ortalamaları hesaplamak için tam 1 yıllık fiyat geçmişini
+    gereksiz yere bir kez daha indiriyordu.
 
     Güncel sayı geçmiş barlar için de doğru olanı, çünkü fiyatlar bedelsize
     göre düzeltilmiş: düzeltilmiş fiyat, ham fiyatın bedelsizin hisse
@@ -92,8 +98,7 @@ def get_ttm_eps(symbol: str) -> pd.Series:
     """
     symbol = symbol.upper()
     now = time.time()
-
-    cached = _fundamentals_cache.get(symbol)
+    cached = _shares_cache.get(symbol)
     if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
         return cached[1]
 
@@ -103,15 +108,74 @@ def get_ttm_eps(symbol: str) -> pd.Series:
     # Sadece temel kotasyon, ucuz.
     last_price = ticker.info.get("last")
 
-    if not metrics.get("market_cap") or not last_price:
-        result = pd.Series(dtype=float)
-        _fundamentals_cache[symbol] = (now, result)
-        return result
+    shares = None
+    if metrics.get("market_cap") and last_price:
+        shares = metrics["market_cap"] / last_price
 
-    shares = metrics["market_cap"] / last_price
+    _shares_cache[symbol] = (now, shares)
+    return shares
 
+
+def get_quarterly_equity(symbol: str) -> pd.Series:
+    """
+    Equity attributable to the parent at each quarter's end, as reported —
+    no inflation restatement, so a nominal price is held against a nominal
+    book the same way the chart's P/E holds it against nominal earnings.
+
+    A report that does not split the parent's share out falls back to total
+    equity for that period; the two differ by the minority interests alone.
+    Index format: "2026Q2".
+
+    Ana ortaklığa ait özkaynağın çeyrek sonundaki hâli, raporlandığı gibi —
+    enflasyon düzeltmesi yok; grafiğin F/K'sı nominal fiyatı nominal kârla
+    nasıl karşılaştırıyorsa burada da nominal defter değeriyle
+    karşılaştırılıyor.
+
+    Ana ortaklık payını ayırmayan rapor o dönem için toplam özkaynağa
+    düşüyor; ikisi yalnızca azınlık payları kadar ayrışıyor.
+    Index: "2026Q2" biçiminde.
+    """
+    symbol = symbol.upper()
+    now = time.time()
+    cached = _equity_cache.get(symbol)
+    if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
+        return cached[1]
+
+    items = statements.quarterly(symbol, quarters=EQUITY_QUARTERS, real=False)["items"]
+    parent = items.get(schema.EQUITY_PARENT, {}).get("periods", {})
+    total = items.get(schema.EQUITY_TOTAL, {}).get("periods", {})
+
+    merged = {}
+    for period in sorted(set(parent) | set(total)):
+        value = parent.get(period)
+        if value is None:
+            value = total.get(period)
+        merged[period] = np.nan if value is None else value
+
+    result = pd.Series(merged, dtype=float)
+    _equity_cache[symbol] = (now, result)
+    return result
+
+
+def get_ttm_eps(symbol: str) -> pd.Series:
+    """
+    TTM EPS = (net income of the last 4 actual quarters) / (share count, see
+    `_share_count`), dated from when each report reached the market.
+
+    TTM EPS = (son 4 gerçek çeyreğin net kârı) / (hisse sayısı, bkz.
+    `_share_count`), her raporun piyasaya ulaştığı günden tarihlenmiş.
+    """
+    symbol = symbol.upper()
+    now = time.time()
+
+    cached = _fundamentals_cache.get(symbol)
+    if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
+        return cached[1]
+
+    shares = _share_count(symbol)
     standalone = get_quarterly_net_income(symbol)
-    if standalone.empty:
+
+    if not shares or standalone.empty:
         result = pd.Series(dtype=float)
         _fundamentals_cache[symbol] = (now, result)
         return result
@@ -124,7 +188,44 @@ def get_ttm_eps(symbol: str) -> pd.Series:
     return result
 
 
-def _index_by_publication(symbol: str, ttm_eps: pd.Series) -> pd.Series:
+def get_bvps(symbol: str) -> pd.Series:
+    """
+    Book value per share: the quarter's parent equity over the share count,
+    dated from when the report reached the market.
+
+    Equity is a snapshot, not a flow, so no trailing sum is taken. Where TTM
+    EPS spends its first four quarters filling one window, book value starts
+    at the store's first quarter — the P/B band reaches a year further back
+    than the P/E band on the same symbol.
+
+    Hisse başına defter değeri: çeyreğin ana ortaklık özkaynağı bölü hisse
+    sayısı, raporun piyasaya ulaştığı günden tarihlenmiş.
+
+    Özkaynak bir akış değil, fotoğraf; bu yüzden yıllık toplam alınmıyor.
+    TTM EPS ilk dört çeyreği pencereyi doldurmakla geçirirken defter değeri
+    deponun ilk çeyreğinden başlıyor — aynı sembolde PD/DD bandı F/K
+    bandından bir yıl daha geriye uzanıyor.
+    """
+    symbol = symbol.upper()
+    now = time.time()
+
+    cached = _bvps_cache.get(symbol)
+    if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
+        return cached[1]
+
+    shares = _share_count(symbol)
+    equity = get_quarterly_equity(symbol).dropna()
+
+    if not shares or equity.empty:
+        result = pd.Series(dtype=float)
+    else:
+        result = _index_by_publication(symbol, equity / shares)
+
+    _bvps_cache[symbol] = (now, result)
+    return result
+
+
+def _index_by_publication(symbol: str, values: pd.Series) -> pd.Series:
     """
     Moves a quarterly series from the quarter's end to the first session that
     could trade on it.
@@ -149,11 +250,11 @@ def _index_by_publication(symbol: str, ttm_eps: pd.Series) -> pd.Series:
     alışkanlıkla geç veren şirket geç vermeye devam ediyor. KAP'tan hiçbir şey
     gelmediyse seri tahmin edilmek yerine bırakılıyor.
     """
-    if ttm_eps.empty:
-        return ttm_eps
+    if values.empty:
+        return values
 
     try:
-        from_year = int(str(ttm_eps.index[0])[:4])
+        from_year = int(str(values.index[0])[:4])
         published = {r["period"]: r["published"] for r in kap.financial_reports(symbol, from_year)}
     except Exception:
         published = {}
@@ -167,7 +268,7 @@ def _index_by_publication(symbol: str, ttm_eps: pd.Series) -> pd.Series:
     median_lag = pd.Series(lags).median()
 
     dated = []
-    for period, value in ttm_eps.items():
+    for period, value in values.items():
         when = published.get(period)
         if when is None:
             when = pd.Period(period, freq="Q").end_time.normalize() + median_lag
@@ -192,23 +293,42 @@ def _index_by_publication(symbol: str, ttm_eps: pd.Series) -> pd.Series:
     )
 
 
-def attach_pe_series(df: pd.DataFrame, ttm_eps: pd.Series) -> pd.DataFrame:
-    if ttm_eps.empty:
-        df["PE"] = None
+def _attach_per_share(df: pd.DataFrame, per_share: pd.Series, column: str) -> pd.DataFrame:
+    """
+    The price over a per-share figure, the figure carried forward from its
+    publication date to every bar until the next one. A denominator at or
+    below zero leaves a gap: a multiple over negative earnings or negative
+    equity is not a small number, it is no number.
+
+    Fiyatın hisse başına bir rakama bölümü; rakam yayım gününden bir
+    sonrakine kadarki her bara taşınıyor. Sıfır ya da altındaki payda boşluk
+    bırakıyor: negatif kâra ya da negatif özkaynağa bölünen çarpan küçük bir
+    sayı değil, hiçbir sayı değil.
+    """
+    if per_share.empty:
+        df[column] = None
         return df
 
     df = df.sort_values("Date").copy()
     df["_date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None).astype("datetime64[us]")
 
-    ttm_eps_df = ttm_eps.reset_index()
-    ttm_eps_df.columns = ["_date", "TTM_EPS"]
-    ttm_eps_df["_date"] = pd.to_datetime(ttm_eps_df["_date"]).astype("datetime64[us]")
+    per_share_df = per_share.reset_index()
+    per_share_df.columns = ["_date", "_per_share"]
+    per_share_df["_date"] = pd.to_datetime(per_share_df["_date"]).astype("datetime64[us]")
 
-    df = pd.merge_asof(df, ttm_eps_df, on="_date", direction="backward")
-    df["PE"] = df["Close"] / df["TTM_EPS"]
-    df.loc[df["TTM_EPS"] <= 0, "PE"] = None
-    df = df.drop(columns=["_date", "TTM_EPS"])
+    df = pd.merge_asof(df, per_share_df, on="_date", direction="backward")
+    df[column] = df["Close"] / df["_per_share"]
+    df.loc[df["_per_share"] <= 0, column] = None
+    df = df.drop(columns=["_date", "_per_share"])
     return df
+
+
+def attach_pe_series(df: pd.DataFrame, ttm_eps: pd.Series) -> pd.DataFrame:
+    return _attach_per_share(df, ttm_eps, "PE")
+
+
+def attach_pb_series(df: pd.DataFrame, bvps: pd.Series) -> pd.DataFrame:
+    return _attach_per_share(df, bvps, "PB")
 
 
 def attach_pe_yoy(df: pd.DataFrame) -> pd.DataFrame:
@@ -232,7 +352,76 @@ def attach_pe_yoy(df: pd.DataFrame) -> pd.DataFrame:
 
 # Below this many days a corridor describes the noise, not the history.
 # Bu kadar günün altında koridor geçmişi değil gürültüyü anlatır.
-PE_BAND_MIN_DAYS = 250
+BAND_MIN_DAYS = 250
+
+
+def _valuation_band(
+    symbol: str,
+    cache: dict,
+    per_share,
+    column: str,
+    missing: str,
+) -> dict:
+    """
+    The machine behind `pe_band` and `pb_band`: a daily multiple reduced to
+    percentiles, with today's reading and the share of the past below it.
+
+    `per_share` is passed unevaluated so a cached answer costs no statement
+    lookup at all.
+
+    `pe_band` ve `pb_band`'in arkasındaki makine: günlük çarpanın
+    yüzdeliklere indirgenmiş hâli, bugünkü okuma ve geçmişin ne kadarının
+    onun altında kaldığı.
+
+    `per_share` çağrılmadan geçiriliyor; böylece önbellekten dönen cevap
+    hiçbir tablo sorgusuna mal olmuyor.
+    """
+    now = time.time()
+    cached = cache.get(symbol)
+    if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
+        return cached[1]
+
+    def answer(result: dict) -> dict:
+        cache[symbol] = (now, result)
+        return result
+
+    series = per_share()
+    if series.empty:
+        return answer({"symbol": symbol, "supported": False, "reason": missing})
+
+    df = price_cache.query_range(
+        symbol, series.index[0].strftime("%Y-%m-%d"), datetime.now().strftime("%Y-%m-%d")
+    )
+    if df.empty:
+        return answer({"symbol": symbol, "supported": False, "reason": "noPrices"})
+
+    daily = _attach_per_share(df.reset_index(), series, column)
+    daily = daily.set_index("Date")[column].dropna()
+    if len(daily) < BAND_MIN_DAYS:
+        return answer({"symbol": symbol, "supported": False, "reason": "tooShort"})
+
+    value = float(daily.iloc[-1])
+    below = int((daily < value).sum())
+
+    return answer(
+        {
+            "symbol": symbol,
+            "supported": True,
+            "points": len(daily),
+            "from": daily.index[0].strftime("%Y-%m-%d"),
+            "to": daily.index[-1].strftime("%Y-%m-%d"),
+            "low": float(daily.quantile(0.05)),
+            "p25": float(daily.quantile(0.25)),
+            "median": float(daily.median()),
+            "p75": float(daily.quantile(0.75)),
+            "high": float(daily.quantile(0.95)),
+            "min": float(daily.min()),
+            "max": float(daily.max()),
+            "value": value,
+            "percentile": round(below / (len(daily) - 1) * 100),
+            "restatedFrom": _restated_from(symbol),
+        }
+    )
 
 
 def pe_band(symbol: str) -> dict:
@@ -279,52 +468,63 @@ def pe_band(symbol: str) -> dict:
     söyleniyor.
     """
     symbol = symbol.upper()
-    now = time.time()
-    cached = _pe_band_cache.get(symbol)
-    if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
-        return cached[1]
-
-    def answer(result: dict) -> dict:
-        _pe_band_cache[symbol] = (now, result)
-        return result
-
-    ttm_eps = get_ttm_eps(symbol)
-    if ttm_eps.empty:
-        return answer({"symbol": symbol, "supported": False, "reason": "noEarnings"})
-
-    df = price_cache.query_range(
-        symbol, ttm_eps.index[0].strftime("%Y-%m-%d"), datetime.now().strftime("%Y-%m-%d")
+    return _valuation_band(
+        symbol, _pe_band_cache, lambda: get_ttm_eps(symbol), "PE", "noEarnings"
     )
-    if df.empty:
-        return answer({"symbol": symbol, "supported": False, "reason": "noPrices"})
 
-    df = attach_pe_series(df.reset_index(), ttm_eps)
-    series = df.set_index("Date")["PE"].dropna()
-    if len(series) < PE_BAND_MIN_DAYS:
-        return answer({"symbol": symbol, "supported": False, "reason": "tooShort"})
 
-    value = float(series.iloc[-1])
-    sorted_values = series.sort_values()
-    below = int((sorted_values < value).sum())
+def pb_band(symbol: str) -> dict:
+    """
+    Where the price-to-book stands in its own history, on the same machine
+    as `pe_band` and answering in the same shape.
 
-    return answer(
-        {
-            "symbol": symbol,
-            "supported": True,
-            "points": len(series),
-            "from": series.index[0].strftime("%Y-%m-%d"),
-            "to": series.index[-1].strftime("%Y-%m-%d"),
-            "low": float(series.quantile(0.05)),
-            "p25": float(series.quantile(0.25)),
-            "median": float(series.median()),
-            "p75": float(series.quantile(0.75)),
-            "high": float(series.quantile(0.95)),
-            "min": float(series.min()),
-            "max": float(series.max()),
-            "value": value,
-            "percentile": round(below / (len(series) - 1) * 100),
-            "restatedFrom": _restated_from(symbol),
-        }
+    Book value is where this reading earns its place beside P/E. Equity is a
+    balance, not a flow: it does not pass through zero from one quarter to
+    the next, so the corridor stays a corridor on exactly the companies
+    whose P/E band is too wide to read. Where a trailing profit near zero
+    throws the P/E to 357, book value moves by the quarter's earnings and
+    little else.
+
+    What it cannot survive is equity actually turning negative — then the
+    day is dropped rather than drawn, the same as a loss-making quarter in
+    the P/E series.
+
+    `restatedFrom` matters more here than it does for earnings. Inflation
+    accounting restates paid-in capital and the reserves along with it, so
+    book value steps up at the changeover by far more than one quarter's
+    profit; the corridor's two halves measure the denominator differently
+    and the reader is told where the seam is.
+
+    The known error is the same one the share count carries: a capital
+    increase for cash is not price-adjusted, so a symbol that held one has
+    wrong book value per share in the bars before it.
+
+    PD/DD'nin kendi geçmişindeki yeri; `pe_band` ile aynı makine, aynı
+    biçimde cevap veriyor.
+
+    Defter değerinin F/K'nın yanında yer kazandığı nokta burası. Özkaynak
+    bir akış değil bakiye: çeyrekten çeyreğe sıfırın içinden geçmiyor, yani
+    koridor tam da F/K bandı okunamayacak kadar geniş olan şirketlerde
+    koridor olarak kalıyor. Son dört çeyreğin kârı sıfıra yaklaşınca F/K
+    357'ye fırlarken defter değeri o çeyreğin kârı kadar, bir de pek az
+    şey kadar oynuyor.
+
+    Kaldıramadığı şey özkaynağın gerçekten negatife dönmesi — o gün
+    çizilmek yerine düşüyor, F/K serisindeki zarar çeyreği gibi.
+
+    `restatedFrom` burada kârdakinden daha önemli. Enflasyon muhasebesi
+    ödenmiş sermayeyi ve yanındaki yedekleri yeniden ifade ediyor, yani
+    defter değeri geçişte bir çeyreğin kârından çok daha fazla yukarı
+    sıçrıyor; koridorun iki yarısı paydayı farklı ölçüyor ve dikişin nerede
+    olduğu okura söyleniyor.
+
+    Bilinen hata hisse sayısının taşıdığıyla aynı: bedelli sermaye artırımı
+    fiyata göre düzeltilmiyor, dolayısıyla bedelli yapan sembolün öncesindeki
+    barlarında hisse başına defter değeri yanlış.
+    """
+    symbol = symbol.upper()
+    return _valuation_band(
+        symbol, _pb_band_cache, lambda: get_bvps(symbol), "PB", "noEquity"
     )
 
 
@@ -363,14 +563,16 @@ def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bo
     stale = price_cache.maybe_refresh_recent(symbol, end)
     history_pending = price_cache.history_pending(symbol)
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         price_future = executor.submit(
             price_cache.query_range, symbol, buffered_start.strftime("%Y-%m-%d"), end
         )
         eps_future = executor.submit(get_ttm_eps, symbol)
+        bvps_future = executor.submit(get_bvps, symbol)
 
         df = price_future.result()
         ttm_eps = eps_future.result()
+        bvps = bvps_future.result()
 
     df = bp.add_indicators(df)
     for period in MA_PERIODS:
@@ -384,6 +586,11 @@ def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bo
     except Exception:
         df["PE"] = None
     df = attach_pe_yoy(df)
+
+    try:
+        df = attach_pb_series(df, bvps)
+    except Exception:
+        df["PB"] = None
 
     if "Date" in df.columns:
         df["Date"] = df["Date"].astype(str)

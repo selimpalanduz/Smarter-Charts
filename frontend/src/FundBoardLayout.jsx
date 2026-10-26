@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SERIES } from './theme.js';
 import { useT } from './i18n.js';
-import { usePeBand, useValuation } from './fundApi.js';
+import { useBand, useValuation } from './fundApi.js';
 import { BandBar, BarChart, LineChart } from './FundCharts.jsx';
 import { band, bandFromStats, change, FLAT_SCALE, formatCell, num, rowScale } from './fundFormat.js';
 
@@ -99,6 +99,47 @@ function checksFor(rows, str) {
   return out;
 }
 
+// One multiple read against its own history: the heading carrying today's
+// figure, the corridor under it, and the line saying what it covers. P/E and
+// P/B answer in the same shape, so they are drawn by the same component.
+// Bir çarpanın kendi geçmişine karşı okunuşu: bugünkü rakamı taşıyan başlık,
+// altında koridor, bir de neyi kapsadığını söyleyen satır. F/K ve PD/DD aynı
+// biçimde cevap verdiği için ikisini de aynı bileşen çiziyor.
+function HistoryBand({ stats, title, note }) {
+  const str = useT();
+  const bar = bandFromStats(stats);
+  if (!bar) return null;
+  // A tenth is a fifth of a P/B near 0,4 and nothing at all next to a P/E of
+  // 22. Below ten the second decimal is what keeps the two ends and the
+  // reading apart — THYAO's corridor read "0,4x 0,4x 1,2x" without it.
+  // Bir ondalık, 0,4 civarındaki PD/DD'nin beşte biri; 22'lik bir F/K'nın
+  // yanında ise hiçbir şey. Onun altında iki uç ile okumayı birbirinden
+  // ayıran şey ikinci ondalık — THYAO'nun koridoru onsuz "0,4x 0,4x 1,2x"
+  // diye okunuyordu.
+  const digits = bar.low < 10 ? 2 : 1;
+  const x = (value) => `${num(value, str.locale, digits)}x`;
+
+  return (
+    <div style={{ marginTop: '14px' }}>
+      <div className="stc-fund-card-head">
+        <span style={{ fontSize: '11.5px' }}>{title}</span>
+        <b className="stc-mono" style={{ fontSize: '14px', color: 'var(--text-strong)' }}>
+          {x(bar.value)}
+        </b>
+      </div>
+      <BandBar
+        band={bar}
+        low={x(bar.low)}
+        high={x(bar.high)}
+        caption={str.fundBandPercentile(bar.percentile)}
+      />
+      <p className="stc-fund-card-sub" style={{ margin: '6px 0 0' }}>
+        {note(yearsOf(stats, str.locale), onDate(stats.restatedFrom, str.locale))}
+      </p>
+    </div>
+  );
+}
+
 // Price-based ratios, fetched on their own: they need the quote and the share
 // count, which the statement endpoint has neither of. They also do not move
 // with the basis toggle, so the basis is not in the request.
@@ -108,8 +149,8 @@ function checksFor(rows, str) {
 function ValuationCard({ symbol }) {
   const str = useT();
   const { data, error, loading } = useValuation(symbol);
-  const { data: peStats } = usePeBand(symbol);
-  const peBar = bandFromStats(peStats);
+  const { data: peStats } = useBand(symbol, 'pe');
+  const { data: pbStats } = useBand(symbol, 'pb');
 
   const money = (value) => {
     if (value == null) return '—';
@@ -152,25 +193,8 @@ function ValuationCard({ symbol }) {
         <p className="stc-fund-card-sub" style={{ margin: '8px 0 0' }}>
           {str.fundValuationProviderNote}
         </p>
-        {peBar && (
-          <div style={{ marginTop: '14px' }}>
-            <div className="stc-fund-card-head">
-              <span style={{ fontSize: '11.5px' }}>{str.fundPeBandTitle}</span>
-              <b className="stc-mono" style={{ fontSize: '14px', color: 'var(--text-strong)' }}>
-                {`${num(peBar.value, str.locale, 1)}x`}
-              </b>
-            </div>
-            <BandBar
-              band={peBar}
-              low={`${num(peBar.low, str.locale, 1)}x`}
-              high={`${num(peBar.high, str.locale, 1)}x`}
-              caption={str.fundBandPercentile(peBar.percentile)}
-            />
-            <p className="stc-fund-card-sub" style={{ margin: '6px 0 0' }}>
-              {str.fundPeBandNote(yearsOf(peStats, str.locale), onDate(peStats.restatedFrom, str.locale))}
-            </p>
-          </div>
-        )}
+        <HistoryBand stats={peStats} title={str.fundPeBandTitle} note={str.fundPeBandNote} />
+        <HistoryBand stats={pbStats} title={str.fundPbBandTitle} note={str.fundPbBandNote} />
       </>
     );
   }
