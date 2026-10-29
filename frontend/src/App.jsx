@@ -537,6 +537,13 @@ async function fetchCostProfile(symbol) {
   return res.json();
 }
 
+async function fetchRelativeStrength(symbol) {
+  const url = `${API_BASE}/api/relative-strength/${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 async function fetchBand(symbol, kind) {
   const url = `${API_BASE}/api/${kind}-band/${symbol}`;
   const res = await fetch(url);
@@ -694,6 +701,44 @@ function buildQuote(rows) {
     change,
     changePct: prev && prev.Close ? (change / prev.Close) * 100 : null,
   };
+}
+
+// One line in the header: how the symbol did against its sector's peer median
+// and against XU100 over a month, with the other three stretches in the tooltip.
+// Başlıkta tek satır: hissenin bir ayda sektör emsal medyanına ve XU100'e göre
+// durumu; diğer üç dönem ipucunda.
+function RelativeStrengthBadge({ data, str }) {
+  const periods = data?.periods ?? {};
+  const shown = periods['1m'] ?? periods['1w'] ?? periods['3m'] ?? periods.ytd;
+  if (!shown) return null;
+  const key = periods['1m'] ? '1m' : periods['1w'] ? '1w' : periods['3m'] ? '3m' : 'ytd';
+
+  // A sector too thin to take a median reads as a dash, not as "-%".
+  // Medyan alınamayacak kadar ince sektör "-%" değil, tire olarak okunuyor.
+  const pct = (value) => (value == null ? '–' : `${signed(value, 1)}%`);
+
+  const tooltip = [
+    shown.sector == null
+      ? str.rsThinSector
+      : str.rsSectorHead(data.sector ?? '-', shown.peers),
+    ...Object.entries(periods).map(([k, p]) =>
+      str.rsRow(str.rsPeriods[k], pct(p.vsSector), pct(p.vsIndex))
+    ),
+  ].join('\n');
+
+  const tone = (value) => (value == null ? 'var(--text-dim)' : value >= 0 ? 'var(--up)' : 'var(--down)');
+
+  return (
+    <div className="stc-rs" title={tooltip}>
+      <span className="stc-rs-period">{str.rsPeriods[key]}</span>
+      <span>
+        {str.rsPeers} <b style={{ color: tone(shown.vsSector) }}>{pct(shown.vsSector)}</b>
+      </span>
+      <span>
+        {str.rsIndexName} <b style={{ color: tone(shown.vsIndex) }}>{pct(shown.vsIndex)}</b>
+      </span>
+    </div>
+  );
 }
 
 function signed(value, digits = 2) {
@@ -1032,6 +1077,7 @@ function App() {
   const [earningsTip, setEarningsTip] = useState(null);
   const [barChangeTip, setBarChangeTip] = useState(null);
   const [earningsNext, setEarningsNext] = useState(null);
+  const [relStrength, setRelStrength] = useState(null);
 
   const [symbol, setSymbol] = useState('THYAO');
   const symbolInputRef = useRef(null);
@@ -1556,11 +1602,13 @@ function App() {
         if (cancelled) return;
         earningsRef.current = earningsData;
         setEarningsNext(earningsData?.next ?? null);
-        const [peData, pbData, profileData] = await Promise.all([
+        const [peData, pbData, profileData, rsData] = await Promise.all([
           fetchBand(symbol, 'pe').catch(() => null),
           fetchBand(symbol, 'pb').catch(() => null),
           fetchCostProfile(symbol).catch(() => null),
+          fetchRelativeStrength(symbol).catch(() => null),
         ]);
+        setRelStrength(rsData?.supported ? rsData : null);
         costProfileRef.current = profileData;
         if (cancelled) return;
         peBandRef.current = peData;
@@ -1733,6 +1781,7 @@ function App() {
       setBarChangeTip(null);
       setEarningsNext(null);
       setQuote(null);
+      setRelStrength(null);
       movesRef.current = null;
       setMoveDetail(null);
       patternHighlightRef.current = null;
@@ -2136,6 +2185,24 @@ function App() {
             font-weight: 500;
             color: var(--text);
           }
+          .stc-rs {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 11px;
+            color: var(--text-dim);
+            white-space: nowrap;
+            cursor: help;
+          }
+          .stc-rs b {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-weight: 500;
+          }
+          .stc-rs-period {
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: var(--text);
+          }
           .stc-session {
             display: flex;
             align-items: center;
@@ -2426,6 +2493,7 @@ function App() {
               <span>V <b>{formatVolume(quote.volume)}</b></span>
             </div>
           )}
+          {relStrength && <RelativeStrengthBadge data={relStrength} str={str} />}
 
           <div style={{ flexGrow: 1 }} />
 

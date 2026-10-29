@@ -30,6 +30,14 @@ export const STRINGS = {
     loadingSymbol: (s) => `Loading ${s}`,
     loadingSlowHint: 'First load for this stock pulls its full history — this can take a minute.',
     nextEarnings: (date) => `Next earnings: ${date} (expected)`,
+    rsPeriods: { '1w': '1W', '1m': '1M', '3m': '3M', ytd: 'YTD' },
+    rsPeers: 'peers',
+    rsIndexName: 'XU100',
+    rsSectorHead: (sector, peers) =>
+      `Sector: ${sector} — median of its ${peers} other members, TradingView grouping`,
+    rsThinSector: 'Sector: too few listed peers to read a median',
+    rsRow: (label, vsSector, vsIndex) =>
+      `${label}  peers ${vsSector}  ·  XU100 ${vsIndex}`,
     earningsMarker: 'E',
     goldenCrossMarker: 'GC',
     deathCrossMarker: 'DC',
@@ -315,6 +323,14 @@ export const STRINGS = {
     loadingSymbol: (s) => `${s} yükleniyor`,
     loadingSlowHint: 'Bu hisse ilk kez yükleniyor, tüm geçmişi çekiliyor — bir dakika sürebilir.',
     nextEarnings: (date) => `Sonraki bilanço: ${date} (beklenen)`,
+    rsPeriods: { '1w': '1H', '1m': '1A', '3m': '3A', ytd: 'YBB' },
+    rsPeers: 'emsal',
+    rsIndexName: 'XU100',
+    rsSectorHead: (sector, peers) =>
+      `Sektör: ${sector} — diğer ${peers} üyesinin medyanı, TradingView gruplaması`,
+    rsThinSector: 'Sektör: medyan okunacak kadar emsal yok',
+    rsRow: (label, vsSector, vsIndex) =>
+      `${label}  emsal ${vsSector}  ·  XU100 ${vsIndex}`,
     earningsMarker: 'B',
     goldenCrossMarker: 'AK',
     deathCrossMarker: 'ÖK',
