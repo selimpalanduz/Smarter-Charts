@@ -1828,6 +1828,9 @@ function App() {
   }, [lang]);
 
   const allVisible = TOGGLE_GROUPS.every((g) => visibility[g.id]);
+  // Notes for the sets the reader turned on; with everything on, nothing was chosen.
+  // Okurun açtığı düzenlerin notları; her şey açıkken bir seçim yapılmamış olur.
+  const activePresets = allVisible ? [] : PRESETS.filter((preset) => preset.groups.every((id) => visibility[id]));
   const canExtend = selectedDrawing && typeof selectedDrawing.getExtend === 'function';
 
   return (
@@ -2217,6 +2220,30 @@ function App() {
             letter-spacing: 0.06em;
             text-transform: uppercase;
             color: var(--text-dim);
+          }
+          .stc-preset-notes {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+            padding: 10px 11px;
+            border: 1px solid var(--panel-border);
+            border-radius: 3px;
+          }
+          .stc-preset-note {
+            margin: 0;
+            font-size: 12px;
+            line-height: 1.55;
+            color: var(--text-dim);
+          }
+          .stc-preset-note b {
+            color: var(--text);
+            font-weight: 600;
+          }
+          .stc-preset-note.is-disclaimer {
+            padding-top: 8px;
+            border-top: 1px solid var(--panel-border);
+            opacity: 0.8;
           }
           .stc-session {
             display: flex;
@@ -2704,6 +2731,16 @@ function App() {
                   </button>
                 ))}
               </div>
+              {activePresets.length > 0 && (
+                <div className="stc-preset-notes">
+                  {activePresets.map((preset) => (
+                    <p key={preset.id} className="stc-preset-note">
+                      <b>{str.presets[preset.id]}</b> {str.presetNotes[preset.id]}
+                    </p>
+                  ))}
+                  <p className="stc-preset-note is-disclaimer">{str.presetNotesDisclaimer}</p>
+                </div>
+              )}
               {PANEL_SECTIONS.map((section) => (
                 <div key={section.titleKey}>
                   <div className="stc-section-title">{str[section.titleKey]}</div>
