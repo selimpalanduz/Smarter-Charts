@@ -18,14 +18,31 @@ export const STRINGS = {
     sectionPresets: 'Ready-made sets',
     presets: { momentum: 'Momentum', trend: 'Trend', volatility: 'Volatility', valuation: 'Valuation' },
     presetNotes: {
-      momentum:
-        'reads how fast price is moving, not whether it is cheap. RSI weighs the last 14 days of gains against the losses: above 70 says it rose a lot recently, below 30 that it fell a lot — neither says expensive or cheap. MACD is the gap between two averages, so a crossing means the speed changed direction. Both are built from price alone and add no new information, which is why volume sits next to them: speed without a rise in shares traded is a move carried by few orders.',
-      trend:
-        'reads whether price has a direction at all. A moving average is the last N days averaged, so its slope is the direction and the distance from price is how far the move has stretched. Supertrend is a threshold that trails price by its recent swing size and flips sides after the turn, never before it. ADX measures how strong a trend is and says nothing about which way: under 20 means no direction, and that is where average crossings most often lead nowhere.',
-      volatility:
-        'reads how big this stock’s moves normally are. Bollinger bands sit two standard deviations above and below the average, so touching one says price travelled far, not that it will come back — a trending stock can walk the upper band for weeks. ATR is the average daily range in lira, not percent, which gives a scale for how much room a position needs and no hint of direction. Bands narrowing only means the recent stretch was quiet.',
-      valuation:
-        'reads where price stands against the company’s own figures. P/E is price over the last four quarters of profit, and the band compares the stock with its own past, not with other stocks — when profit falls the ratio rises, so "got more expensive" and "earned less" look the same. P/B is price over book equity, which reads best for banks and holdings whose balance sheet is the business and weakly for asset-light companies. The earnings markers show the day each figure was published, so a break in the band can be lined up against the announcement that caused it.',
+      momentum: [
+        'RSI above 70: the last 14 days of gains outweigh the losses. It does not mean expensive.',
+        'RSI below 30: the other way round. It does not mean the fall is over.',
+        'MACD crossing: the gap between two averages changed direction. News about speed, not about value.',
+        'Volume flat while price races: few orders are carrying the move.',
+        'All three come from price alone, so two of them agreeing is one piece of evidence, not two.',
+      ],
+      trend: [
+        'Slope of the average: the direction. Distance from it: how far the move has stretched.',
+        'Supertrend flipped sides: the turn is confirmed — after the fact, never before it.',
+        'ADX under 20: no direction. This is where average crossings most often lead nowhere.',
+        'ADX rising: the trend is getting stronger. It does not say which way.',
+      ],
+      volatility: [
+        'Price touching a band: it travelled far. Not that it comes back — a trending stock walks the band for weeks.',
+        'Bands narrowing: the recent stretch was quiet. Not a signal that a move is due.',
+        'ATR: the average daily range in lira, a scale for how much room a position needs.',
+        'ATR says nothing about direction, only about size.',
+      ],
+      valuation: [
+        'P/E low in its band: low against this stock’s own past, not against other stocks.',
+        'Profit falls and P/E rises, so "got more expensive" and "earned less" look identical.',
+        'P/B: reads well for banks and holdings whose balance sheet is the business, weakly for asset-light ones.',
+        'Earnings marker: the day the figure was published. Line a break in the band up against it.',
+      ],
     },
     presetNotesDisclaimer: 'These notes say what each indicator measures and where it misleads. None of them is buy or sell advice.',
     sectionIndicators: 'Oscillators & Indicators',
@@ -338,14 +355,31 @@ export const STRINGS = {
     sectionPresets: 'Hazır düzenler',
     presets: { momentum: 'Momentum', trend: 'Trend', volatility: 'Oynaklık', valuation: 'Değerleme' },
     presetNotes: {
-      momentum:
-        'fiyatın ne kadar hızlı hareket ettiğine bakar, pahalı olup olmadığına bakmaz. RSI son 14 günün kazancını kaybına oranlar: 70 üstü son dönemde çok yükseldiğini, 30 altı çok düştüğünü söyler — ikisi de pahalı ya da ucuz demez. MACD iki ortalamanın arasındaki açıklık, yani kesişme hızın yön değiştirdiği an. İkisi de yalnızca fiyattan türetilir ve yeni bilgi eklemez; hacim bu yüzden yanlarında durur: işlem gören pay artmadan gelen hızlanmayı az sayıda emir taşıyor demektir.',
-      trend:
-        'fiyatın bir yönü olup olmadığına bakar. Hareketli ortalama son N günün ortalaması; eğimi yön, fiyatın ona uzaklığı hareketin ne kadar açıldığıdır. Supertrend, fiyatı son dönemdeki salınım büyüklüğü kadar geriden izleyen bir eşik ve dönüşten sonra taraf değiştirir, önce değil. ADX trendin ne kadar güçlü olduğunu ölçer, hangi yöne gittiği hakkında hiçbir şey söylemez: 20 altı yön yok demektir ve ortalama kesişmelerinin en sık boşa çıktığı yer de orasıdır.',
-      volatility:
-        'bu hissenin hareketlerinin normalde ne kadar büyük olduğuna bakar. Bollinger bantları ortalamanın iki standart sapma üstünde ve altındadır; banda dokunmak fiyatın uzağa gittiğini söyler, geri döneceğini söylemez — trendli bir hisse haftalarca üst bantta yürüyebilir. ATR günlük ortalama hareket aralığıdır, yüzde değil lira; bir pozisyonun ne kadar boşluğa ihtiyacı olduğuna ölçek verir, yön hakkında ipucu vermez. Bantların daralması da sadece son dönemin sakin geçtiği anlamına gelir.',
-      valuation:
-        'fiyatın şirketin kendi rakamlarına göre nerede durduğuna bakar. F/K, fiyatın son dört çeyreğin kârına oranı; bant hisseyi kendi geçmişiyle karşılaştırır, başka hisselerle değil — kâr düştüğünde oran yükseldiği için "pahalılaştı" ile "daha az kazandı" aynı görünür. PD/DD fiyatın defterdeki özkaynağa oranı; bilançosu işin kendisi olan banka ve holdinglerde iyi okunur, varlığı az şirketlerde zayıf kalır. Bilanço işaretleri de her rakamın hangi gün açıklandığını gösterir, böylece banttaki kırılma onu yapan açıklamayla aynı yere konabilir.',
+      momentum: [
+        'RSI 70 üstü: son 14 günün kazancı kaybına baskın. Pahalı demek değil.',
+        'RSI 30 altı: tersi. Düşüşün bittiği anlamına gelmiyor.',
+        'MACD kesişmesi: iki ortalamanın açıklığı yön değiştirdi. Hız haberi, değer haberi değil.',
+        'Fiyat koşarken hacim yerinde: hareketi az sayıda emir taşıyor.',
+        'Üçü de yalnızca fiyattan türüyor; ikisinin aynı şeyi söylemesi iki kanıt değil, tek kanıt.',
+      ],
+      trend: [
+        'Ortalamanın eğimi: yön. Fiyatın ona uzaklığı: hareket ne kadar açıldı.',
+        'Supertrend taraf değiştirdi: dönüş teyit edildi — sonradan, önceden değil.',
+        'ADX 20 altı: yön yok. Ortalama kesişmelerinin en sık boşa çıktığı yer burası.',
+        'ADX yükseliyor: trend güçleniyor. Hangi yöne olduğunu söylemiyor.',
+      ],
+      volatility: [
+        'Fiyat banda dokundu: uzağa gitti. Geri döneceği anlamına gelmiyor — trendli hisse haftalarca bantta yürür.',
+        'Bantlar daraldı: son dönem sakin geçti. Hareket geleceğinin işareti değil.',
+        'ATR: günlük ortalama hareket aralığı, lira cinsinden; pozisyonun ne kadar boşluğa ihtiyacı olduğunun ölçeği.',
+        'ATR yön hakkında bir şey söylemez, sadece büyüklük hakkında.',
+      ],
+      valuation: [
+        'F/K bandın altında: hissenin kendi geçmişine göre düşük, başka hisselere göre değil.',
+        'Kâr düşerken F/K yükseldiği için "pahalılaştı" ile "daha az kazandı" aynı görünür.',
+        'PD/DD: bilançosu işin kendisi olan banka ve holdinglerde iyi okunur, varlığı az şirkette zayıf.',
+        'Bilanço işareti: rakamın açıklandığı gün. Banttaki kırılmayı o güne bakarak eşleştir.',
+      ],
     },
     presetNotesDisclaimer: 'Bu notlar göstergelerin ne ölçtüğünü ve nerede yanılttığını anlatır. Hiçbiri al-sat tavsiyesi değildir.',
     sectionIndicators: 'Osilatörler & İndikatörler',

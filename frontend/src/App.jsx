@@ -2237,8 +2237,20 @@ function App() {
             color: var(--text-dim);
           }
           .stc-preset-note b {
+            display: block;
+            margin-bottom: 4px;
             color: var(--text);
             font-weight: 600;
+          }
+          .stc-preset-note ul {
+            margin: 0;
+            padding-left: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+          }
+          .stc-preset-note li::marker {
+            color: var(--text-dim);
           }
           .stc-preset-note.is-disclaimer {
             padding-top: 8px;
@@ -2734,9 +2746,14 @@ function App() {
               {activePresets.length > 0 && (
                 <div className="stc-preset-notes">
                   {activePresets.map((preset) => (
-                    <p key={preset.id} className="stc-preset-note">
-                      <b>{str.presets[preset.id]}</b> {str.presetNotes[preset.id]}
-                    </p>
+                    <div key={preset.id} className="stc-preset-note">
+                      <b>{str.presets[preset.id]}</b>
+                      <ul>
+                        {str.presetNotes[preset.id].map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    </div>
                   ))}
                   <p className="stc-preset-note is-disclaimer">{str.presetNotesDisclaimer}</p>
                 </div>
