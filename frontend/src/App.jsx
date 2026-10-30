@@ -1038,6 +1038,7 @@ function App() {
   const [loadingSlow, setLoadingSlow] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState('indicators');
+  const [presetNotesOpen, setPresetNotesOpen] = useState(false);
   const [view, setView] = useState('chart');
   const [quote, setQuote] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
@@ -2229,6 +2230,22 @@ function App() {
             padding: 10px 11px;
             border: 1px solid var(--panel-border);
             border-radius: 3px;
+            cursor: pointer;
+          }
+          .stc-preset-notes:hover {
+            border-color: var(--separator-hover, var(--panel-border));
+          }
+          .stc-preset-notes:focus-visible {
+            outline: 1px solid var(--accent);
+            outline-offset: 1px;
+          }
+          /* Closed: each line keeps what fits the box and ends in an ellipsis. */
+          /* Kapalı: her satır kutuya sığanı tutar, gerisi üç noktaya iner. */
+          .stc-preset-notes.is-collapsed li,
+          .stc-preset-notes.is-collapsed .is-disclaimer {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
           .stc-preset-note {
             margin: 0;
@@ -2744,7 +2761,20 @@ function App() {
                 ))}
               </div>
               {activePresets.length > 0 && (
-                <div className="stc-preset-notes">
+                <div
+                  className={`stc-preset-notes ${presetNotesOpen ? 'is-open' : 'is-collapsed'}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={presetNotesOpen}
+                  title={presetNotesOpen ? str.presetNotesCollapse : str.presetNotesExpand}
+                  onClick={() => setPresetNotesOpen((open) => !open)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setPresetNotesOpen((open) => !open);
+                    }
+                  }}
+                >
                   {activePresets.map((preset) => (
                     <div key={preset.id} className="stc-preset-note">
                       <b>{str.presets[preset.id]}</b>
