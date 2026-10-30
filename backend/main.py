@@ -13,6 +13,7 @@ from kap import get_text
 from anchors import get_anchors
 from symbols import get_symbols
 from relative_strength import relative_strength
+from reaction import reaction_profile
 from fundamentals.router import router as fundamentals_router
 from fundamentals import warmer as fundamentals_warmer
 import anchor_scanner
@@ -130,6 +131,15 @@ def get_relative_strength(symbol: str):
     """The symbol's return against its sector's peer median and against XU100."""
     try:
         return relative_strength(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/reaction/{symbol}")
+def get_reaction_profile(symbol: str):
+    """Whether the symbol's sharp moves and earnings reactions came back or ran on."""
+    try:
+        return reaction_profile(symbol)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 

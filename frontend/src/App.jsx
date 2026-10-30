@@ -21,6 +21,7 @@ import FundamentalsView from './FundamentalsView.jsx';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
 import PatternSearchWidget from './PatternSearchWidget.jsx';
 import MoveReasonsWidget from './MoveReasonsWidget.jsx';
+import ReactionProfileWidget from './ReactionProfileWidget.jsx';
 import AnchorsWidget from './AnchorsWidget.jsx';
 import AnchorScanWidget from './AnchorScanWidget.jsx';
 import { API_BASE } from './config.js';
@@ -2203,6 +2204,20 @@ function App() {
             letter-spacing: 0.06em;
             color: var(--text);
           }
+          .stc-reaction-row {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 8px 10px;
+            border: 1px solid var(--panel-border);
+            border-radius: 3px;
+          }
+          .stc-reaction-head {
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+          }
           .stc-session {
             display: flex;
             align-items: center;
@@ -2721,6 +2736,8 @@ function App() {
 
             <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'moves'}>
               <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />
+              <div style={{ borderTop: '1px solid var(--panel-border)', margin: '16px 0' }} />
+              <ReactionProfileWidget symbol={symbol} />
             </div>
 
             <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'psych'}>
