@@ -1,0 +1,64 @@
+29.10.2026 — SEKTORE GORELI GUC ROZETI (fikirler.txt madde 6, 1. etap)
+
+Rozet bitti ve gercek uygulamada dogrulandi.
+
+BACKEND
+backend/relative_strength.py, GET /api/relative-strength/{symbol}.
+TradingView scanner'a iki istek: biri tum BIST sembolleri icin sektor + dort
+getiri kolonu, biri XU100 icin. Anlik gorunum 15 dakika tutuluyor. Istek
+duserse suresi gecmis gorunum veriliyor — "guclu mu zayif mi" sorusuna hala
+cevap verir, hicbir sey vermez.
+
+FRONTEND
+Baslikta, OHLC'nin yaninda tek satir. THYAO'daki hali:
+
+    1A  emsal +4,7%  XU100 -0,3%
+
+Ipucunda dort donem birden:
+    Sektor: Transportation — diger 12 uyesinin medyani, TradingView gruplamasi
+    1H  emsal +3,3%  ·  XU100 -1,8%
+    1A  emsal +4,7%  ·  XU100 -0,3%
+    3A  emsal +5,8%  ·  XU100 -1,6%
+    YBB emsal +22,8% ·  XU100 -5,7%
+EN/TR ikisi de calisiyor.
+
+BILINMESI GEREKEN UC SEY
+
+1. "Emsal" bir endeks degil, medyan. Sektorun getirisi o sektordeki diger
+   uyelerin medyani — piyasa degeriyle agirlikli degil. Medyan kucuk hisseleri
+   endeksin tarttigindan cok daha agir tartiyor, o yuzden buyuk hisselerde fark
+   sistematik olarak yuksek cikiyor: ASELS 3 ayda emsaline gore +%48,5 ama
+   XU100'e gore +%18,3. Ikisi farkli sorularin cevabi, rozet ikisini de
+   gosteriyor. Etiket bilerek "sektor" degil "emsal" yazildi.
+
+2. KCHOL'de sektor satiri tire. TradingView onu "Energy Minerals" sayiyor,
+   orada 2 emsal kaliyor, ucten az olunca medyan cizilmiyor. Yani notlardaki o
+   bilinen hata sessizce yanlis sayi uretmek yerine gorunur oluyor. Bu yol da
+   gercek uygulamada kontrol edildi.
+
+3. Getirileri biz hesaplamiyoruz — scanner'in hazir kolonlari, anlasildigi
+   kadariyla duzeltilmemis fiyatlardan. Ikinci ondaligina kadar okunmamali.
+   Bedelli duzeltmesi maddesi bunu da ilgilendiriyor.
+
+DOGRULAMA
+vite build gecti; endpoint HTTP uzerinden THYAO / KCHOL / olmayan sembol icin
+denendi; rozet tarayicida hem dolu hem tireli haliyle goruldu. Acilan API ve
+dev sunucusu kapatildi.
+
+DEGISENLER
+backend/relative_strength.py (yeni), backend/main.py,
+frontend/src/App.jsx, frontend/src/i18n.js, fikirler.txt (madde 6 isaretlendi)
+
+DOLDURUCU
+Ayri surecte calisiyor, bu not yazilirken 400/545. Depodaki TTL 7 gun ve en
+eski kayit 18 gunluktu, yani "77/550'de kalmisti" artik gecerli degil —
+neredeyse bastan dolduruyor. Bunun asil anlami: doldurucu tek seferlik is
+degil, haftalik zamanlanmis is olmali (siradaki 3. madde).
+
+SIRADAKI
+1. Asiri tepki mi, yetersiz tepki mi (fikirler.txt madde 12)
+2. Doldurucuyu haftalik zamanlanmis ise cevir
+3. Bedelli sermaye artirimi duzeltmesi
+4. Doldurucu ilerleme ekrani
+5. Bantlara veri yasi damgasi
+Araci kurum dagilimi (madde 2) lisans isi cozulurse.
