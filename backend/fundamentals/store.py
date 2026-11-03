@@ -94,6 +94,15 @@ def is_fresh(symbol: str, quarters: int, currency: str = CURRENCY_TRY) -> bool:
     return depth >= quarters and (time.time() - fetched_at) < TTL
 
 
+def seconds_until_stale() -> float:
+    """How long until the oldest stored symbol expires; 0 when something already has."""
+    with connect() as conn:
+        oldest = conn.execute("SELECT MIN(fetched_at) FROM fetched").fetchone()[0]
+    if oldest is None:
+        return 0.0
+    return max(0.0, oldest + TTL - time.time())
+
+
 def save(
     symbol: str,
     values: dict[str, dict[str, float]],

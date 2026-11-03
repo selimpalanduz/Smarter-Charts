@@ -33,8 +33,8 @@ app.add_middleware(
 # WARM_CACHE verilmedikçe kapalı; bkz. cache_warmer.
 cache_warmer.start()
 
-# Off unless WARM_FUNDAMENTALS is set; see fundamentals.warmer.
-# WARM_FUNDAMENTALS verilmedikçe kapalı; bkz. fundamentals.warmer.
+# Off unless WARM_FUNDAMENTALS is set; once on it refills weekly. See fundamentals.warmer.
+# WARM_FUNDAMENTALS verilmedikçe kapalı; açıkken haftalık yeniliyor. Bkz. fundamentals.warmer.
 fundamentals_warmer.start()
 
 app.include_router(fundamentals_router, prefix="/api/fundamentals", tags=["fundamentals"])

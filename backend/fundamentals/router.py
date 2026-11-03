@@ -96,7 +96,7 @@ def get_valuation(symbol: str, refresh: bool = False):
 
 @router.get("/progress")
 def get_progress():
-    """What the background filler is doing, when it was started."""
+    """What the background filler is doing, and when its next pass is due."""
     return warmer.progress()
 
 
