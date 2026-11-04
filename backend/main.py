@@ -12,7 +12,7 @@ from moves import get_moves
 from kap import get_text
 from anchors import get_anchors
 from symbols import get_symbols
-from relative_strength import relative_strength
+from relative_strength import relative_strength, sector_map
 from reaction import reaction_profile
 from fundamentals.router import router as fundamentals_router
 from fundamentals import warmer as fundamentals_warmer
@@ -131,6 +131,15 @@ def get_relative_strength(symbol: str):
     """The symbol's return against its sector's peer median and against XU100."""
     try:
         return relative_strength(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/sectors")
+def get_sector_map():
+    """Every sector's return against the market's, with its members."""
+    try:
+        return sector_map()
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 

@@ -174,6 +174,33 @@ export const STRINGS = {
     tabPatterns: 'Patterns',
     tabMoves: 'Moves',
     tabPsych: 'Psychology',
+    tabSectors: 'Sectors',
+    heatTitle: 'Sector heat map',
+    heatIntro:
+      'Which sectors the money is going into, and which stock leads each one. A sector’s figure is its middle member’s return — half its stocks did better, half worse. The colour is that figure against the middle of the whole market, so green means the sector beat the typical BIST stock.',
+    heatSector: 'Sector',
+    heatMarket: 'Market, middle stock',
+    heatPeriods: { '1w': '1W', '1m': '1M', '3m': '3M', ytd: 'YTD' },
+    heatSortBy: (period) => `Sort by ${period}`,
+    heatRowTitle: (members) => `${members} stocks — click for the list`,
+    heatCellTitle: (c) =>
+      `${c.sector} · ${c.period}
+Sector, middle stock: ${c.median}
+Market, middle stock: ${c.market}
+Difference: ${c.diff}
+Sector weighted by company size: ${c.weighted} (${c.indexSymbol}: ${c.index})`,
+    heatMemberTitle: (symbol) => `Load ${symbol}`,
+    heatMoreMembers: (n) => `+${n} more`,
+    heatNoMembers: 'No returns for this period.',
+    heatBelow: 'below the market',
+    heatAbove: 'above',
+    heatEmpty: 'Sector data could not be loaded.',
+    heatFooter: (dropped) =>
+      'Sectors are TradingView’s and are sometimes wrong — KCHOL comes back "Energy Minerals". The returns are the scanner’s own, unadjusted for rights issues, and are not meant to be read to the decimal. The snapshot is up to fifteen minutes old.' +
+      (dropped ? ` ${dropped} sector(s) with fewer than three members are left out.` : ''),
+    // TradingView's sector names are already English; the Turkish side translates them.
+    // TradingView'ın sektör adları zaten İngilizce; Türkçe taraf çeviriyor.
+    sectorNames: {},
     togglePanel: 'Toggle side panel',
     patternEmpty: 'Pick "Find Pattern" in the left toolbar, then click the first and last bar of a formation.',
     movesTitle: 'What happened?',
@@ -514,6 +541,52 @@ export const STRINGS = {
     tabPatterns: 'Formasyon',
     tabMoves: 'Hareketler',
     tabPsych: 'Psikoloji',
+    tabSectors: 'Sektörler',
+    heatTitle: 'Sektör ısı haritası',
+    heatIntro:
+      'Para hangi sektöre akıyor ve her sektörün önündeki hisse hangisi. Sektörün rakamı, ortadaki üyesinin getirisi — hisselerinin yarısı bundan iyi, yarısı kötü. Renk, bu rakamın tüm piyasanın ortasına göre durumu; yani yeşil, sektörün sıradan bir BIST hissesini geçtiği anlamına geliyor.',
+    heatSector: 'Sektör',
+    heatMarket: 'Piyasa, ortadaki hisse',
+    heatPeriods: { '1w': '1H', '1m': '1A', '3m': '3A', ytd: 'YBB' },
+    heatSortBy: (period) => `${period} sütununa göre sırala`,
+    heatRowTitle: (members) => `${members} hisse — listesi için tıkla`,
+    heatCellTitle: (c) =>
+      `${c.sector} · ${c.period}
+Sektör, ortadaki hisse: ${c.median}
+Piyasa, ortadaki hisse: ${c.market}
+Fark: ${c.diff}
+Şirket büyüklüğüyle ağırlıklı sektör: ${c.weighted} (${c.indexSymbol}: ${c.index})`,
+    heatMemberTitle: (symbol) => `${symbol} grafiğini aç`,
+    heatMoreMembers: (n) => `+${n} hisse daha`,
+    heatNoMembers: 'Bu dönem için getiri yok.',
+    heatBelow: 'piyasanın altında',
+    heatAbove: 'üstünde',
+    heatEmpty: 'Sektör verisi yüklenemedi.',
+    heatFooter: (dropped) =>
+      'Sektörler TradingView’ın ve bazen yanlış — KCHOL "Energy Minerals" olarak geliyor. Getiriler scanner’ın kendi getirileri, bedelli için düzeltilmemiş ve ondalığına kadar okunmak için değil. Anlık görüntü on beş dakikaya kadar eski olabilir.' +
+      (dropped ? ` Üç üyeden az olan ${dropped} sektör dışarıda bırakıldı.` : ''),
+    sectorNames: {
+      Communications: 'İletişim',
+      'Health Services': 'Sağlık hizmetleri',
+      Transportation: 'Ulaştırma',
+      Miscellaneous: 'Diğer',
+      'Energy Minerals': 'Enerji madenleri',
+      'Retail Trade': 'Perakende',
+      'Consumer Durables': 'Dayanıklı tüketim',
+      'Consumer Non-Durables': 'Dayanıksız tüketim',
+      Finance: 'Finans',
+      'Distribution Services': 'Dağıtım hizmetleri',
+      'Non-Energy Minerals': 'Enerji dışı madenler',
+      'Process Industries': 'İşleme sanayi',
+      'Commercial Services': 'Ticari hizmetler',
+      Utilities: 'Altyapı hizmetleri',
+      'Consumer Services': 'Tüketici hizmetleri',
+      'Health Technology': 'Sağlık teknolojisi',
+      'Technology Services': 'Teknoloji hizmetleri',
+      'Producer Manufacturing': 'Üretici imalat',
+      'Electronic Technology': 'Elektronik teknolojisi',
+      'Industrial Services': 'Sanayi hizmetleri',
+    },
     togglePanel: 'Yan paneli aç/kapat',
     patternEmpty: 'Soldaki araç çubuğundan "Formasyon Ara"yı seç, sonra formasyonun ilk ve son barına tıkla.',
     movesTitle: 'Neden oldu?',

@@ -112,7 +112,7 @@ def _fetch() -> dict:
         symbol = values[0]
         if not symbol:
             continue
-        symbols[symbol.upper()] = {"sector": values[1], "perf": _perf(values)}
+        symbols[symbol.upper()] = {"sector": values[1], "cap": values[2], "perf": _perf(values)}
 
     index_perf = {}
     for row in index:
@@ -180,4 +180,113 @@ def relative_strength(symbol: str) -> dict:
         "sector": sector,
         "sectorSource": "tradingview",
         "periods": periods,
+    }
+
+
+# The heat map's own figures. Same snapshot, so the map costs no extra request.
+# Isı haritasının rakamları. Aynı anlık görüntü, yani harita ek istek maliyeti
+# getirmiyor.
+MIN_MEMBERS = 3
+
+
+def _median_by_period(rows: list[dict]) -> dict[str, float]:
+    """The median return per period over the given rows, skipping empty columns."""
+    out = {}
+    for key in PERIODS:
+        values = [row["perf"][key] for row in rows if key in row["perf"]]
+        if values:
+            out[key] = round(median(values), 2)
+    return out
+
+
+def _weighted_by_period(rows: list[dict]) -> dict[str, float]:
+    """The cap-weighted return per period, which is what XU100 can be compared with."""
+    out = {}
+    for key in PERIODS:
+        pairs = [
+            (row["perf"][key], row["cap"])
+            for row in rows
+            if key in row["perf"] and isinstance(row.get("cap"), (int, float)) and row["cap"] > 0
+        ]
+        total = sum(cap for _, cap in pairs)
+        if total:
+            out[key] = round(sum(perf * cap for perf, cap in pairs) / total, 2)
+    return out
+
+
+def sector_map() -> dict:
+    """
+    Every sector's return next to the market's, so the question "which sector is
+    the money going into" has an answer, and each sector's members with it, so
+    "the strongest stock in the strongest sector" does too.
+
+    A sector row is the MEDIAN of its members, and it is compared against the
+    MEDIAN OF THE WHOLE MARKET, not against XU100. The two medians are the
+    comparable pair: XU100 is cap-weighted, so measuring an equal-weighted
+    sector median against it reads as sector strength whenever small caps beat
+    large ones across the board, which is a market-wide fact, not a sector's.
+    XU100 is still reported, next to the cap-weighted sector return that is
+    actually comparable with it.
+
+    Her sektörün getirisi, piyasanın getirisinin yanında — "para hangi sektöre
+    akıyor" sorusunun cevabı olsun diye; üyeleriyle birlikte, "güçlü sektörün
+    en güçlü hissesi hangisi" sorusunun da cevabı olsun diye.
+
+    Sektör satırı üyelerinin MEDYANI ve karşılaştırıldığı şey XU100 değil, TÜM
+    PİYASANIN MEDYANI. Karşılaştırılabilir çift bu iki medyan: XU100 piyasa
+    değeriyle ağırlıklı, yani eşit ağırlıklı bir sektör medyanını ona karşı
+    ölçmek, küçük hisseler büyükleri topluca geçtiğinde sektör gücü gibi
+    okunuyor — oysa bu piyasanın geneline ait bir olgu, o sektöre ait değil.
+    XU100 yine veriliyor; yanında da onunla gerçekten karşılaştırılabilir olan,
+    piyasa değeriyle ağırlıklı sektör getirisi.
+    """
+    snapshot = _snapshot()
+    rows = [row for row in snapshot["symbols"].values() if row["perf"]]
+
+    groups: dict[str, list] = {}
+    for name, row in snapshot["symbols"].items():
+        if row["sector"] and row["perf"]:
+            groups.setdefault(row["sector"], []).append({**row, "symbol": name})
+
+    market = _median_by_period(rows)
+    sectors = []
+    dropped = 0
+    for sector, members in groups.items():
+        if len(members) < MIN_MEMBERS:
+            # Too few to read a median from; the badge drops these the same way.
+            # Medyan okunamayacak kadar az; rozet de bunları aynı şekilde atıyor.
+            dropped += 1
+            continue
+        sectors.append(
+            {
+                "sector": sector,
+                "members": len(members),
+                "median": _median_by_period(members),
+                "weighted": _weighted_by_period(members),
+                "symbols": sorted(
+                    (
+                        {
+                            "symbol": m["symbol"],
+                            "cap": m["cap"] if isinstance(m.get("cap"), (int, float)) else None,
+                            "perf": m["perf"],
+                        }
+                        for m in members
+                    ),
+                    key=lambda m: m["cap"] or 0,
+                    reverse=True,
+                ),
+            }
+        )
+
+    sectors.sort(key=lambda s: s["median"].get("1m", float("-inf")), reverse=True)
+
+    return {
+        "periods": list(PERIODS),
+        "market": market,
+        "index": {k: round(v, 2) for k, v in snapshot["index"].items()},
+        "indexSymbol": INDEX_SYMBOL,
+        "sectors": sectors,
+        "dropped": dropped,
+        "asOf": _memory[0] if _memory else None,
+        "sectorSource": "tradingview",
     }

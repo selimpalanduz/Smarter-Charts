@@ -24,6 +24,7 @@ import MoveReasonsWidget from './MoveReasonsWidget.jsx';
 import ReactionProfileWidget from './ReactionProfileWidget.jsx';
 import AnchorsWidget from './AnchorsWidget.jsx';
 import AnchorScanWidget from './AnchorScanWidget.jsx';
+import SectorHeatWidget from './SectorHeatWidget.jsx';
 import { API_BASE } from './config.js';
 import { STRINGS, LangContext, useT } from './i18n.js';
 import { THEME, setPalette, colors } from './theme.js';
@@ -462,6 +463,7 @@ const SIDEBAR_TABS = [
   { id: 'patterns', labelKey: 'tabPatterns' },
   { id: 'moves', labelKey: 'tabMoves' },
   { id: 'psych', labelKey: 'tabPsych' },
+  { id: 'sectors', labelKey: 'tabSectors' },
 ];
 const LOADING_BARS = [0, 0.09, 0.18, 0.27, 0.36, 0.45, 0.54, 0.63];
 
@@ -2208,6 +2210,131 @@ function App() {
             letter-spacing: 0.06em;
             color: var(--text);
           }
+          .stc-heat {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            font-size: 14px;
+          }
+          .stc-heat-table {
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            font-size: 12.5px;
+          }
+          .stc-heat-table col.stc-heat-period {
+            width: 16%;
+          }
+          .stc-heat-table th {
+            padding: 0 0 6px;
+            text-align: right;
+            font-weight: 500;
+            color: var(--text-dim);
+          }
+          .stc-heat-table th:first-child {
+            text-align: left;
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+          }
+          .stc-heat-col {
+            padding: 2px 5px;
+            border: 1px solid transparent;
+            border-radius: 3px;
+            background: none;
+            font: inherit;
+            color: var(--text-dim);
+            cursor: pointer;
+          }
+          .stc-heat-col:hover {
+            color: var(--text);
+            border-color: var(--btn-border);
+          }
+          .stc-heat-col.is-active {
+            color: var(--text-strong);
+            border-color: var(--accent);
+          }
+          .stc-heat-reference td {
+            padding: 3px 6px;
+            text-align: right;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--panel-border);
+          }
+          .stc-heat-reference td:first-child {
+            text-align: left;
+          }
+          .stc-heat-row {
+            cursor: pointer;
+          }
+          .stc-heat-row td {
+            padding: 3px 6px;
+            text-align: right;
+            border-bottom: 1px solid var(--page-bg);
+          }
+          .stc-heat-row td:first-child {
+            text-align: left;
+            overflow-wrap: anywhere;
+          }
+          .stc-heat-row:hover .stc-heat-name {
+            color: var(--text-strong);
+          }
+          .stc-heat-row.is-own .stc-heat-name {
+            color: var(--accent);
+          }
+          .stc-heat-row.is-open .stc-heat-name {
+            text-decoration: underline;
+            text-underline-offset: 3px;
+          }
+          .stc-heat-cell {
+            color: var(--text);
+          }
+          .stc-heat-members {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px;
+            padding: 7px 6px 9px;
+          }
+          .stc-heat-member {
+            display: flex;
+            gap: 6px;
+            padding: 3px 7px;
+            border: 1px solid var(--btn-border);
+            border-radius: 3px;
+            background: var(--btn-bg);
+            font: inherit;
+            font-size: 12px;
+            color: var(--text);
+            cursor: pointer;
+          }
+          .stc-heat-member:hover {
+            background: var(--btn-bg-hover);
+          }
+          .stc-heat-member.is-current {
+            border-color: var(--accent);
+          }
+          .stc-heat-legend {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+          }
+          .stc-heat-ramp {
+            display: flex;
+            flex-grow: 1;
+            height: 10px;
+            border: 1px solid var(--panel-border);
+            border-radius: 2px;
+            overflow: hidden;
+          }
+          .stc-heat-ramp i {
+            flex: 1;
+          }
+          .stc-heat-foot {
+            font-size: 12px;
+            border-top: 1px solid var(--panel-border);
+            padding-top: 10px;
+          }
           .stc-reaction-row {
             display: flex;
             flex-direction: column;
@@ -2388,12 +2515,19 @@ function App() {
           }
           .stc-tabs {
             display: flex;
-            height: 40px;
+            /* Wraps to a second row rather than clipping a label: the Turkish
+               names do not fit on one. */
+            /* Etiketi kesmek yerine ikinci satıra sarıyor: Türkçe adlar tek
+               satıra sığmıyor. */
+            flex-wrap: wrap;
             flex-shrink: 0;
             border-bottom: 1px solid var(--panel-border);
           }
           .stc-tab {
-            flex: 1;
+            flex: 1 1 auto;
+            height: 40px;
+            padding: 0 6px;
+            white-space: nowrap;
             border: none;
             background: transparent;
             color: var(--text-dim);
@@ -2828,6 +2962,10 @@ function App() {
               <AnchorsWidget data={anchorsData} />
               <div style={{ borderTop: '1px solid var(--panel-border)', margin: '16px 0' }} />
               <AnchorScanWidget onSelectSymbol={handleSelectScanSymbol} />
+            </div>
+
+            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'sectors'}>
+              <SectorHeatWidget symbol={symbol} onSelectSymbol={handleSelectScanSymbol} />
             </div>
           </aside>
         </div>
