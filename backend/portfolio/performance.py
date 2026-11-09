@@ -48,6 +48,15 @@ from . import actions as actions_mod
 from . import store
 
 
+# How far before the first trade the benchmark's prices are fetched, so a
+# trade dated on a closed day still has an earlier bar to be priced at. Wide
+# enough for a long public holiday on top of a weekend.
+# Olcut fiyatlarinin ilk islemden ne kadar oncesinden cekildigi; kapali bir
+# gune tarihli islem de fiyatlanacak onceki bir bar bulsun. Hafta sonunun
+# ustune binen uzun bir resmi tatile yetecek kadar genis.
+BENCHMARK_LOOKBACK_DAYS = 30
+
+
 def _today() -> str:
     return date_cls.today().strftime("%Y-%m-%d")
 
@@ -219,7 +228,18 @@ def _value_series(closes, shares, dividends, all_trades) -> list[dict]:
 def _benchmark(symbol, all_trades, series, start, today, notes) -> dict | None:
     """The same cash flows, on the same days, into one symbol."""
     symbol = symbol.upper()
-    closes, stale = _closes(symbol, start, today)
+    # Fetched from before the first trade, not from it. A trade dated on a day
+    # the exchange was shut -- a weekend, a holiday, or just a date written
+    # down loosely -- has no bar of its own, and without earlier bars to fall
+    # back on there was no price to convert its cash into. Every trade was
+    # then skipped and the benchmark came out at zero, reading as -100%.
+    # Ilk islemden degil, oncesinden cekiliyor. Borsanin kapali oldugu bir
+    # gune tarihli islem -- hafta sonu, tatil, ya da ustunkoru yazilmis bir
+    # tarih -- kendi barina sahip degil; geriye donecek bar olmadiginda
+    # nakdini cevirecek fiyat da yoktu. O zaman her islem atlaniyor ve olcut
+    # sifir cikiyordu, yani -%100.
+    fetch_start = (pd.Timestamp(start) - pd.Timedelta(days=BENCHMARK_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    closes, stale = _closes(symbol, fetch_start, today)
     if closes.empty:
         notes.append({"code": "no_benchmark_prices", "symbol": symbol})
         return None
@@ -231,12 +251,23 @@ def _benchmark(symbol, all_trades, series, start, today, notes) -> dict | None:
 
     shares = 0.0
     bench_trades: list[dict] = []
+    short_history = False
     for t in sorted(all_trades, key=lambda r: (r["date"], r["id"])):
         day = pd.Timestamp(t["date"]).normalize()
         window = closes[closes.index <= day]
         if window.empty:
-            continue
-        price = float(window.iloc[-1])
+            # The benchmark's history starts after this trade -- a symbol
+            # listed later, say. The money goes in at its first price rather
+            # than vanishing, and the reader is told the comparison does not
+            # cover the whole period.
+            # Olcutun gecmisi bu islemden sonra basliyor -- sonradan islem
+            # gormeye baslamis bir sembol gibi. Para yok olmak yerine ilk
+            # fiyatindan giriyor ve okuyana kiyasin tum donemi kapsamadigi
+            # soyleniyor.
+            short_history = True
+            price = float(closes.iloc[0])
+        else:
+            price = float(window.iloc[-1])
         cash = t["quantity"] * t["price"]
         cash = cash + t["fee"] if t["side"] == "buy" else -(cash - t["fee"])
         qty = cash / price
@@ -255,6 +286,10 @@ def _benchmark(symbol, all_trades, series, start, today, notes) -> dict | None:
                 "fee": 0.0,
             }
         )
+
+    if short_history:
+        notes.append({"code": "benchmark_history_short", "symbol": symbol,
+                      "date": closes.index[0].strftime("%Y-%m-%d")})
 
     bench_divs = _dividend_cash(symbol, bench_trades, action_rows, bonus, today)
     div_total = sum(d["amount"] for d in bench_divs)
@@ -363,6 +398,33 @@ def overview(benchmark: str | None = None) -> dict:
 
         if stale:
             notes.append({"code": "prices_refreshing", "symbol": symbol})
+        # A weekday with no bar of its own: a public holiday, or a gap in the
+        # cache. Either way the trade is kept and the user is told, because
+        # the record of what they actually did is worth more than our
+        # tidiness about it.
+        # Kendi barina sahip olmayan bir hafta ici gunu: resmi tatil, ya da
+        # onbellekteki bir bosluk. Iki durumda da islem korunuyor ve
+        # kullaniciya soyleniyor; cunku gercekten ne yaptiginin kaydi, bizim
+        # onunla ilgili derli topluluğumuzdan degerli.
+        # A weekend-dated trade can no longer be entered, but one stored before
+        # that rule existed still has to account for itself rather than sit
+        # there quietly.
+        # Hafta sonu tarihli bir islem artik girilemiyor; ama bu kural
+        # yokken kaydedilmis olan, orada sessizce durmak yerine kendini izah
+        # etmek zorunda.
+        if not closes.empty:
+            have = {d.strftime("%Y-%m-%d") for d in closes.index}
+            for row in rows:
+                if row["date"] in have:
+                    continue
+                weekend = pd.Timestamp(row["date"]).weekday() >= 5
+                notes.append(
+                    {
+                        "code": "trade_on_weekend" if weekend else "trade_on_closed_day",
+                        "symbol": symbol,
+                        "date": row["date"],
+                    }
+                )
         if _oversold(trades_adj):
             notes.append({"code": "oversold", "symbol": symbol})
         for r in action_rows:

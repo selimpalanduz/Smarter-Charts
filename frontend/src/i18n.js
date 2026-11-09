@@ -321,6 +321,7 @@ Sector weighted by company size: ${c.weighted} (${c.indexSymbol}: ${c.index})`,
     pfCancel: 'Keep',
     pfNeedSymbol: 'Pick a stock first.',
     pfNeedNumbers: 'A date, a share count above zero and a price are all needed.',
+    pfMarketClosed: 'The exchange was closed that day — it falls on a weekend. Pick the trading day the order actually went through.',
     pfSaveFailed: (code) => `It could not be saved (${code}).`,
     pfPriceHint:
       'Enter the price you actually paid on that day, not today’s price. If the stock has split since, the old price looks far too high next to today’s — that is expected, and the split is taken into account for you.',
@@ -355,6 +356,12 @@ Sector weighted by company size: ${c.weighted} (${c.indexSymbol}: ${c.index})`,
         `${note.symbol}: the most recent prices are still being fetched. The figures will firm up in a moment.`,
       benchmark_without_dividends: (note) =>
         `${note.symbol} is a price index: it carries no dividends of its own. Your side of the comparison includes the dividends you collected, so the index is slightly flattered against — read the gap with that in mind.`,
+      benchmark_history_short: (note) =>
+        `${note.symbol} has prices only from ${note.date}, which is after some of your trades. Money from those went in at its first price, so the comparison does not cover the whole period.`,
+      trade_on_closed_day: (note) =>
+        `${note.symbol} has a trade dated ${note.date}, a weekday with no price of its own — most likely a public holiday. The trade is kept and priced off the session before it; if the date is simply wrong, correct it.`,
+      trade_on_weekend: (note) =>
+        `${note.symbol} has a trade dated ${note.date}, which falls on a weekend when the exchange was shut. It is priced off the session before it. New trades can no longer be dated this way, so this one was entered earlier — delete it and put it back on the real trading day.`,
     },
     fundTitle: 'Financial Statements',
     fundBasis: 'Reporting basis',
@@ -793,6 +800,7 @@ Fark: ${c.diff}
     pfCancel: 'Kalsın',
     pfNeedSymbol: 'Önce bir hisse seç.',
     pfNeedNumbers: 'Tarih, sıfırdan büyük bir adet ve bir fiyat gerekiyor.',
+    pfMarketClosed: 'O gün borsa kapalıydı — hafta sonuna denk geliyor. Emrin gerçekten geçtiği işlem gününü seç.',
     pfSaveFailed: (code) => `Kaydedilemedi (${code}).`,
     pfPriceHint:
       'O gün gerçekten ödediğin fiyatı yaz, bugünkü fiyatı değil. Hisse o günden sonra bölündüyse eski fiyat bugünküyle yan yana çok yüksek görünür — bu normal, bölünmeyi senin yerine hesaba katıyoruz.',
@@ -827,6 +835,12 @@ Fark: ${c.diff}
         `${note.symbol}: en güncel fiyatlar hâlâ çekiliyor. Rakamlar birazdan netleşecek.`,
       benchmark_without_dividends: (note) =>
         `${note.symbol} bir fiyat endeksi: kendi temettüsü yok. Kıyasın senin tarafın topladığın temettüyü içeriyor, endeks tarafı içermiyor; yani aradaki farkı endeksin biraz aleyhine okuduğunu bil.`,
+      benchmark_history_short: (note) =>
+        `${note.symbol} için fiyat ancak ${note.date} tarihinden itibaren var, bu da bazı işlemlerinden sonrası. O işlemlerin parası ölçüte ilk fiyatından girdi; yani kıyas tüm dönemi kapsamıyor.`,
+      trade_on_closed_day: (note) =>
+        `${note.symbol}'de ${note.date} tarihli bir işlem var; bu bir hafta içi günü ama kendi fiyatı yok — büyük olasılıkla resmi tatil. İşlem korunuyor ve bir önceki seansla fiyatlanıyor; tarih yanlışsa düzelt.`,
+      trade_on_weekend: (note) =>
+        `${note.symbol}'de ${note.date} tarihli bir işlem var; hafta sonuna denk geliyor, borsa kapalıydı. Bir önceki seansla fiyatlanıyor. Yeni işlemler artık bu tarihlerle girilemiyor, yani bu kayıt daha önce girilmiş — silip gerçek işlem gününe koy.`,
     },
     fundTitle: 'Mali Tablolar',
     fundBasis: 'Raporlama tabanı',

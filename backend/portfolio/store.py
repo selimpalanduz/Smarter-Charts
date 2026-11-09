@@ -11,6 +11,7 @@ bu: kaybolan fiyat önbelleği kendini doldurur, kaybolan işlem dolmaz.
 """
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / "data" / "portfolio.db"
@@ -86,10 +87,34 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+@contextmanager
+def _session():
+    """Commits on the way out, and closes either way.
+
+    `with sqlite3.connect(...)` commits the transaction but leaves the
+    connection open, so handles pile up and on Windows the file stays locked
+    against anything that wants to move or delete it. price_cache.py closes
+    in a finally for the same reason.
+
+    Cikarken commit, her halukarda close.
+
+    `with sqlite3.connect(...)` islemi onayliyor ama baglantiyi acik
+    birakiyor; boylece tanitici birikiyor ve Windows'ta dosya, onu tasimak
+    ya da silmek isteyen her seye karsi kilitli kaliyor. price_cache.py da
+    ayni sebeple finally icinde kapatiyor.
+    """
+    conn = _connect()
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 def add_trade(symbol, side, date, quantity, price, fee=0.0, note=None) -> int:
     if side not in SIDES:
         raise ValueError("unknown_side", side)
-    with _connect() as conn:
+    with _session() as conn:
         cur = conn.execute(
             "INSERT INTO trades (symbol, side, date, quantity, price, fee, note)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -99,7 +124,7 @@ def add_trade(symbol, side, date, quantity, price, fee=0.0, note=None) -> int:
 
 
 def delete_trade(trade_id: int) -> bool:
-    with _connect() as conn:
+    with _session() as conn:
         return conn.execute("DELETE FROM trades WHERE id = ?", (trade_id,)).rowcount > 0
 
 
@@ -112,19 +137,19 @@ def trades(symbol: str | None = None) -> list[dict]:
     # Same-day trades settle in insertion order, so id breaks the tie.
     # Aynı gün işlemleri giriş sırasına göre, eşitliği id çözüyor.
     sql += " ORDER BY date, id"
-    with _connect() as conn:
+    with _session() as conn:
         return [dict(r) for r in conn.execute(sql, args)]
 
 
 def held_symbols() -> list[str]:
-    with _connect() as conn:
+    with _session() as conn:
         return [r["symbol"] for r in conn.execute("SELECT DISTINCT symbol FROM trades ORDER BY symbol")]
 
 
 def add_manual_action(symbol, kind, date, value, note=None) -> int:
     if kind not in ACTION_KINDS:
         raise ValueError("unknown_kind", kind)
-    with _connect() as conn:
+    with _session() as conn:
         cur = conn.execute(
             "INSERT INTO manual_actions (symbol, kind, date, value, note) VALUES (?, ?, ?, ?, ?)",
             (symbol.upper(), kind, date, float(value), note),
@@ -133,7 +158,7 @@ def add_manual_action(symbol, kind, date, value, note=None) -> int:
 
 
 def delete_manual_action(action_id: int) -> bool:
-    with _connect() as conn:
+    with _session() as conn:
         return conn.execute("DELETE FROM manual_actions WHERE id = ?", (action_id,)).rowcount > 0
 
 
@@ -144,14 +169,14 @@ def manual_actions(symbol: str | None = None) -> list[dict]:
         sql += " WHERE symbol = ?"
         args = (symbol.upper(),)
     sql += " ORDER BY date, id"
-    with _connect() as conn:
+    with _session() as conn:
         return [dict(r) for r in conn.execute(sql, args)]
 
 
 def save_feed_actions(symbol: str, rows: list[tuple[str, str, float]], fetched_at: float) -> None:
     """Replace a symbol's fetched actions. Hand-entered ones are untouched."""
     symbol = symbol.upper()
-    with _connect() as conn:
+    with _session() as conn:
         conn.execute("DELETE FROM feed_actions WHERE symbol = ?", (symbol,))
         conn.executemany(
             "INSERT OR REPLACE INTO feed_actions (symbol, kind, date, value) VALUES (?, ?, ?, ?)",
@@ -164,7 +189,7 @@ def save_feed_actions(symbol: str, rows: list[tuple[str, str, float]], fetched_a
 
 
 def feed_actions(symbol: str) -> list[dict]:
-    with _connect() as conn:
+    with _session() as conn:
         return [
             dict(r)
             for r in conn.execute(
@@ -174,6 +199,6 @@ def feed_actions(symbol: str) -> list[dict]:
 
 
 def feed_fetched_at(symbol: str) -> float | None:
-    with _connect() as conn:
+    with _session() as conn:
         row = conn.execute("SELECT fetched_at FROM feed_state WHERE symbol = ?", (symbol.upper(),)).fetchone()
         return row["fetched_at"] if row else None

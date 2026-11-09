@@ -311,6 +311,18 @@ function StatTile({ label, value, tone, hint }) {
 
 const EMPTY_TRADE = { side: 'buy', date: '', quantity: '', price: '', fee: '', note: '' };
 
+// Saturday and Sunday, the days BIST is certainly shut. A public holiday is
+// just as shut but is not in the calendar, so it is caught on the overview as
+// a note rather than refused here -- the backend draws the same line.
+// Cumartesi ve pazar, BIST'in kesin kapali oldugu günler. Resmi tatil de o
+// kadar kapali ama takvimde yok; o yüzden burada reddedilmek yerine özet
+// ekranında not olarak yakalanıyor — arka uç da aynı çizgiyi çiziyor.
+function isWeekend(iso) {
+  if (!iso) return false;
+  const day = new Date(`${iso}T00:00:00`).getDay();
+  return day === 0 || day === 6;
+}
+
 function TradeForm({ onSaved, str }) {
   const [symbol, setSymbol] = useState('');
   const [form, setForm] = useState(EMPTY_TRADE);
@@ -321,8 +333,7 @@ function TradeForm({ onSaved, str }) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function submit(event) {
-    event.preventDefault();
+  async function submit() {
     setError(null);
     if (!symbol) {
       setError(str.pfNeedSymbol);
@@ -332,6 +343,10 @@ function TradeForm({ onSaved, str }) {
     const price = Number(form.price);
     if (!(quantity > 0) || !(price >= 0) || !form.date) {
       setError(str.pfNeedNumbers);
+      return;
+    }
+    if (isWeekend(form.date)) {
+      setError(str.pfMarketClosed);
       return;
     }
     setBusy(true);
@@ -354,8 +369,17 @@ function TradeForm({ onSaved, str }) {
     }
   }
 
+  // Not a <form>: SymbolPicker brings its own, and a form inside a form makes
+  // the picker's Enter bubble up here as a submit -- it fired before the
+  // chosen symbol had landed in state, so nothing was saved. Saving is on the
+  // button instead, which also keeps Enter doing one thing only: picking the
+  // stock.
+  // <form> değil: SymbolPicker kendi formunu getiriyor ve form içinde form,
+  // seçicinin Enter'ını buraya submit olarak kabartıyor -- seçilen sembol
+  // state'e düşmeden tetikleniyordu, kayıt da olmuyordu. Kaydetme butonda;
+  // böylece Enter tek bir iş yapıyor: hisseyi seçmek.
   return (
-    <form className="stc-pf-form" onSubmit={submit}>
+    <div className="stc-pf-form">
       <div className="stc-pf-field stc-pf-field-symbol">
         <label>{str.pfSymbol}</label>
         <SymbolPicker symbol={symbol} onSelect={setSymbol} />
@@ -386,7 +410,16 @@ function TradeForm({ onSaved, str }) {
           type="date"
           value={form.date}
           max={new Date().toISOString().slice(0, 10)}
-          onChange={(e) => set('date', e.target.value)}
+          aria-invalid={isWeekend(form.date) || undefined}
+          onChange={(e) => {
+            const next = e.target.value;
+            set('date', next);
+            // Said at the moment it is picked rather than held back until
+            // Save, so the date picker is still open in the user's mind.
+            // Kaydet'e kadar bekletilmeyip seçildiği anda söyleniyor; böylece
+            // takvim kullanıcının aklında hâlâ açık.
+            setError(isWeekend(next) ? str.pfMarketClosed : null);
+          }}
         />
       </div>
 
@@ -441,13 +474,18 @@ function TradeForm({ onSaved, str }) {
         />
       </div>
 
-      <button className="stc-btn stc-btn-primary stc-pf-submit" type="submit" disabled={busy}>
+      <button
+        className="stc-btn stc-btn-primary stc-pf-submit"
+        type="button"
+        onClick={submit}
+        disabled={busy}
+      >
         {busy ? str.pfSaving : str.pfSave}
       </button>
 
       <p className="stc-pf-pricehint stc-muted">{str.pfPriceHint}</p>
       {error && <p className="stc-error stc-pf-formerror">{error}</p>}
-    </form>
+    </div>
   );
 }
 
@@ -459,8 +497,7 @@ function ActionForm({ onSaved, str }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  async function submit(event) {
-    event.preventDefault();
+  async function submit() {
     setError(null);
     const amount = Number(value);
     if (!symbol || !date || !(amount > 0)) {
@@ -481,7 +518,7 @@ function ActionForm({ onSaved, str }) {
   }
 
   return (
-    <form className="stc-pf-form stc-pf-form-action" onSubmit={submit}>
+    <div className="stc-pf-form stc-pf-form-action">
       <div className="stc-pf-field stc-pf-field-symbol">
         <label>{str.pfSymbol}</label>
         <SymbolPicker symbol={symbol} onSelect={setSymbol} />
@@ -529,13 +566,13 @@ function ActionForm({ onSaved, str }) {
         />
       </div>
 
-      <button className="stc-btn stc-pf-submit" type="submit" disabled={busy}>
+      <button className="stc-btn stc-pf-submit" type="button" onClick={submit} disabled={busy}>
         {busy ? str.pfSaving : str.pfSave}
       </button>
 
       <p className="stc-pf-pricehint stc-muted">{str.pfActionHint[kind]}</p>
       {error && <p className="stc-error stc-pf-formerror">{error}</p>}
-    </form>
+    </div>
   );
 }
 
