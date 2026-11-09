@@ -11,3 +11,4 @@ fikirler.txt
 backend/data/anchor_scan.json
 backend/data/symbols.json
 backend/data/fundamentals.db*
+backend/data/portfolio.db*

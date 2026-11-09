@@ -18,6 +18,7 @@ import {
 } from './drawingTools.js';
 import SymbolPicker from './SymbolPicker.jsx';
 import FundamentalsView from './FundamentalsView.jsx';
+import PortfolioView from './PortfolioView.jsx';
 import VolumeScanWidget from './VolumeScanWidget.jsx';
 import PatternSearchWidget from './PatternSearchWidget.jsx';
 import MoveReasonsWidget from './MoveReasonsWidget.jsx';
@@ -2659,7 +2660,11 @@ function App() {
           </div>
           <div className="stc-vrule" />
 
-          <div className="stc-seg" role="group" aria-label={str.viewChart + ' / ' + str.viewFundamentals}>
+          <div
+            className="stc-seg"
+            role="group"
+            aria-label={[str.viewChart, str.viewFundamentals, str.viewPortfolio].join(' / ')}
+          >
             <button
               className={view === 'chart' ? 'is-active' : ''}
               aria-pressed={view === 'chart'}
@@ -2673,6 +2678,13 @@ function App() {
               onClick={() => setView('fundamentals')}
             >
               {str.viewFundamentals}
+            </button>
+            <button
+              className={view === 'portfolio' ? 'is-active' : ''}
+              aria-pressed={view === 'portfolio'}
+              onClick={() => setView('portfolio')}
+            >
+              {str.viewPortfolio}
             </button>
           </div>
           <div className="stc-vrule" />
@@ -2971,6 +2983,7 @@ function App() {
         </div>
 
         {view === 'fundamentals' && <FundamentalsView symbol={symbol} />}
+        {view === 'portfolio' && <PortfolioView />}
 
         <footer className="stc-statusbar">
           <span>{symbol} · 1D · BIST</span>

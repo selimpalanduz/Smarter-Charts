@@ -16,6 +16,7 @@ from relative_strength import relative_strength, sector_map
 from reaction import reaction_profile
 from fundamentals.router import router as fundamentals_router
 from fundamentals import warmer as fundamentals_warmer
+from portfolio.router import router as portfolio_router
 import anchor_scanner
 import cache_warmer
 
@@ -38,6 +39,7 @@ cache_warmer.start()
 fundamentals_warmer.start()
 
 app.include_router(fundamentals_router, prefix="/api/fundamentals", tags=["fundamentals"])
+app.include_router(portfolio_router, prefix="/api/portfolio", tags=["portfolio"])
 
 
 @app.get("/api/price/{symbol}")
