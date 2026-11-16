@@ -48,7 +48,7 @@ function RoundView({ results, onSelectSymbol }) {
   const significant = rows.filter((r) => r.round.z >= SIGNIFICANT_Z).length;
   return (
     <>
-      <span style={{ opacity: 0.75, lineHeight: 1.45 }}>{t.anchorScanIntro}</span>
+      <span className="stc-prose">{t.anchorScanIntro}</span>
       <ScanTable
         head={
           <>
@@ -70,7 +70,7 @@ function RoundView({ results, onSelectSymbol }) {
           </tr>
         ))}
       </ScanTable>
-      <span style={{ opacity: 0.55, fontSize: '11.5px', lineHeight: 1.45 }}>
+      <span className="stc-prose" style={{ fontSize: '12.5px', color: 'var(--text-faint)' }}>
         {t.anchorScanChance(significant, Math.round(rows.length * CHANCE_SHARE), rows.length)}
       </span>
     </>
@@ -91,7 +91,7 @@ function High52View({ results, onSelectSymbol }) {
 
   return (
     <>
-      <span style={{ opacity: 0.75, lineHeight: 1.45 }}>{t.high52ScanIntro(NEAR_HIGH_PCT)}</span>
+      <span className="stc-prose">{t.high52ScanIntro(NEAR_HIGH_PCT)}</span>
       {tests > 0 && avgExcess != null && (
         <span className="stc-mono" style={{ fontSize: '12px' }}>
           {t.high52ScanMarket(((broke / tests) * 100).toFixed(0), signed(avgExcess))}
@@ -127,7 +127,7 @@ function High52View({ results, onSelectSymbol }) {
           })}
         </ScanTable>
       )}
-      <span style={{ opacity: 0.55, fontSize: '11.5px', lineHeight: 1.45 }}>{t.high52ScanNote}</span>
+      <span className="stc-prose" style={{ fontSize: '12.5px', color: 'var(--text-faint)' }}>{t.high52ScanNote}</span>
     </>
   );
 }
@@ -180,7 +180,7 @@ function AnchorScanWidget({ onSelectSymbol }) {
       </div>
 
       {error && <span style={{ color: 'var(--down)', fontSize: '12px' }}>{error}</span>}
-      {scan?.updatedAt && <span style={{ opacity: 0.5, fontSize: '11.5px' }}>{t.anchorScanUpdated(scan.updatedAt)}</span>}
+      {scan?.updatedAt && <span style={{ fontSize: '12.5px', color: 'var(--text-faint)' }}>{t.anchorScanUpdated(scan.updatedAt)}</span>}
       {scan && !results.length && !running && <span className="stc-muted">{t.anchorScanHint}</span>}
 
       {results.length > 0 && <View results={results} onSelectSymbol={onSelectSymbol} />}

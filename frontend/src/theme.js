@@ -8,6 +8,12 @@ export const THEME = {
     text: '#d7dce1',
     textStrong: '#eef1f4',
     textDim: '#7d858e',
+    // Sentence blocks read brighter than the chrome around them: a dim label
+    // beside a chart is fine, a paragraph in it is not.
+    // Cümle blokları çevresindeki arayüzden daha parlak okunuyor: grafiğin
+    // yanındaki soluk etiket sorun değil, içindeki paragraf sorun.
+    textProse: '#ced4dc',
+    textFaint: '#aeb6c2',
     btnBg: '#16191d',
     btnBgHover: '#1f2328',
     btnBorder: '#2c3137',
@@ -39,6 +45,8 @@ export const THEME = {
     text: '#2a2f35',
     textStrong: '#111417',
     textDim: '#6b737c',
+    textProse: '#3b424a',
+    textFaint: '#57606a',
     btnBg: '#ffffff',
     btnBgHover: '#f0f1f3',
     btnBorder: '#d4d8dd',

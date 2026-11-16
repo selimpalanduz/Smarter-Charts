@@ -101,3 +101,45 @@ export const ExternalIcon = (p) => (
     <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
   </Icon>
 );
+
+// Side panel rail, one per tab, plus the panel's own header buttons.
+// Yan panel şeridi, sekme başına bir tane, artı panelin kendi başlık düğmeleri.
+export const IndicatorIcon = (p) => <Icon {...p}><path d="M3 17l5-6 4 3 5-8" /></Icon>;
+export const ScanIcon = (p) => (
+  <Icon {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.4-3.4" />
+  </Icon>
+);
+export const ContextIcon = (p) => (
+  <Icon {...p}>
+    <path d="M12 3l9 5-9 5-9-5z" />
+    <path d="M3 14l9 5 9-5" />
+  </Icon>
+);
+export const NotesIcon = (p) => (
+  <Icon {...p}>
+    <path d="M6 3h9l4 4v14H6z" />
+    <path d="M9 12h7M9 16h5" />
+  </Icon>
+);
+export const PinIcon = (p) => (
+  <Icon {...p}>
+    <path d="M9 4h6l-1 7 4 3H6l4-3z" />
+    <path d="M12 14v6" />
+  </Icon>
+);
+export const HelpIcon = (p) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.2a2.6 2.6 0 1 1 3.4 2.5c-.6.2-.9.7-.9 1.3v.6" />
+    <path d="M12 17h.01" />
+  </Icon>
+);
+export const MoreIcon = (p) => (
+  <Icon {...p}>
+    <circle cx="5" cy="12" r="1.1" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.1" fill="currentColor" />
+    <circle cx="19" cy="12" r="1.1" fill="currentColor" />
+  </Icon>
+);

@@ -99,10 +99,10 @@ function ReactionProfileWidget({ symbol }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px' }}>
       <span className="stc-panel-title">{t.reactionTitle}</span>
-      <span style={{ opacity: 0.8, lineHeight: 1.5 }}>{t.reactionIntro(data.years)}</span>
+      <span className="stc-prose">{t.reactionIntro(data.years)}</span>
       <Kind title={t.reactionMoves} kind={data.moves} horizons={horizons} />
       <Kind title={t.reactionEarnings} kind={data.earnings} horizons={horizons} />
-      <span className="stc-muted" style={{ lineHeight: 1.5, borderTop: '1px solid var(--panel-border)', paddingTop: '10px' }}>
+      <span className="stc-muted" style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '10px' }}>
         {t.reactionFooter}
       </span>
     </div>

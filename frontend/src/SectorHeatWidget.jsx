@@ -174,7 +174,7 @@ function SectorHeatWidget({ symbol, onSelectSymbol }) {
   return (
     <div className="stc-heat">
       <span className="stc-panel-title">{t.heatTitle}</span>
-      <span style={{ opacity: 0.8, lineHeight: 1.5 }}>{t.heatIntro}</span>
+      <span className="stc-prose">{t.heatIntro}</span>
 
       <table className="stc-heat-table">
         <colgroup>

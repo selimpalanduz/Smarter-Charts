@@ -26,6 +26,7 @@ import ReactionProfileWidget from './ReactionProfileWidget.jsx';
 import AnchorsWidget from './AnchorsWidget.jsx';
 import AnchorScanWidget from './AnchorScanWidget.jsx';
 import SectorHeatWidget from './SectorHeatWidget.jsx';
+import NotesPanel from './NotesPanel.jsx';
 import { API_BASE } from './config.js';
 import { STRINGS, LangContext, useT } from './i18n.js';
 import { THEME, setPalette, colors } from './theme.js';
@@ -41,9 +42,16 @@ import {
   ExtendRightIcon,
   DeleteIcon,
   ClearAllIcon,
-  PanelIcon,
   SunIcon,
   MoonIcon,
+  CloseIcon,
+  IndicatorIcon,
+  ScanIcon,
+  ContextIcon,
+  NotesIcon,
+  PinIcon,
+  HelpIcon,
+  MoreIcon,
 } from './icons.jsx';
 
 const CHUNK_MONTHS = 6;
@@ -425,6 +433,31 @@ const PRESETS = [
   { id: 'valuation', groups: ['pe', 'pb', 'earnings'] },
 ];
 
+// The swatch beside each name in the on-screen list, so a row can be matched
+// to the line it drew. Groups that draw no line of their own (markers, zones)
+// take a neutral swatch.
+// Ekranda listesindeki her adın yanındaki renk, satırın çizdiği çizgiyle
+// eşleşebilsin diye. Kendi çizgisi olmayan gruplar (işaretler, bölgeler) nötr
+// renk alıyor.
+const GROUP_COLORS = {
+  ma: '#2a78d6',
+  maCross: '#eda100',
+  bb: 'rgba(150,150,150,0.7)',
+  vwap: '#a259d9',
+  supertrend: '#26a69a',
+  volume: '#5a6472',
+  rsi: '#a67bd6',
+  rsiDiv: '#3ddc84',
+  macd: '#2a78d6',
+  stoch: '#eda100',
+  adx: '#52514e',
+  atr: '#d9822b',
+  obv: '#3d8c5f',
+  pe: '#c2410c',
+  pb: '#7c3aed',
+};
+const NEUTRAL_SWATCH = 'var(--text-dim)';
+
 const OTHER_TOOL_IDS = ['srZones', 'autoFib', 'costProfile', 'earnings', 'moves', 'anchors'];
 const PANEL_SECTIONS = [
   { titleKey: 'sectionIndicators', groups: TOGGLE_GROUPS.filter((g) => !OTHER_TOOL_IDS.includes(g.id)) },
@@ -458,14 +491,45 @@ const TWO_POINT_PRIMITIVES = {
   pattern: RectanglePrimitive,
 };
 
+// Four tabs, not six: Scan holds what you use to find a symbol (volume scan,
+// pattern search, the anchor widgets), Context holds what explains the one in
+// front of you (disclosures, reaction profile, sector heat). The rail's icon
+// order, and the 1-4 keys, are this array's order.
+// Altı değil dört sekme: Tara sembol bulmak için kullandıklarını (hacim
+// taraması, formasyon araması, çıpa widget'ları), Bağlam önündekini açıklayanı
+// (bildirimler, tepki profili, sektör ısısı) tutuyor. Şeritteki ikon sırası ve
+// 1-4 tuşları bu dizinin sırası.
 const SIDEBAR_TABS = [
-  { id: 'indicators', labelKey: 'tabIndicators' },
-  { id: 'scan', labelKey: 'tabScan' },
-  { id: 'patterns', labelKey: 'tabPatterns' },
-  { id: 'moves', labelKey: 'tabMoves' },
-  { id: 'psych', labelKey: 'tabPsych' },
-  { id: 'sectors', labelKey: 'tabSectors' },
+  { id: 'indicators', labelKey: 'tabIndicators', Icon: IndicatorIcon },
+  { id: 'scan', labelKey: 'tabScan', Icon: ScanIcon },
+  { id: 'context', labelKey: 'tabContext', Icon: ContextIcon },
+  { id: 'notes', labelKey: 'tabNotes', Icon: NotesIcon },
 ];
+const SIDEBAR_STORAGE_KEY = 'stc.sidebar';
+
+// The rail remembers only two things: which tab was last open, and whether the
+// panel is pinned. Pinned means the app starts with the panel open; unpinned
+// means it starts as the closed rail, which is the point of the whole move.
+// Şerit yalnız iki şeyi hatırlıyor: en son hangi sekme açıktı ve panel
+// sabitlenmiş mi. Sabitli, uygulamanın panel açık başlaması demek; sabitsiz,
+// kapalı şeritle başlaması demek ki bu hamlenin bütün amacı o.
+function loadSidebarPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SIDEBAR_STORAGE_KEY));
+    const tab = SIDEBAR_TABS.some((t) => t.id === saved?.tab) ? saved.tab : 'indicators';
+    return { tab, pinned: saved?.pinned === true };
+  } catch {
+    return { tab: 'indicators', pinned: false };
+  }
+}
+
+function saveSidebarPrefs(prefs) {
+  try {
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // storage unavailable
+  }
+}
 const LOADING_BARS = [0, 0.09, 0.18, 0.27, 0.36, 0.45, 0.54, 0.63];
 
 // A cold symbol pulls its whole history upstream, which can run past a minute.
@@ -572,7 +636,7 @@ function chartThemeOptions(p) {
     layout: {
       background: { color: p.chartBg },
       textColor: p.chartText,
-      fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
       fontSize: 11,
       panes: { separatorColor: p.separator, separatorHoverColor: p.separatorHover, enableResize: true },
     },
@@ -1039,9 +1103,21 @@ function App() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingSlow, setLoadingSlow] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState('indicators');
+  const sidebarPrefs = useRef(loadSidebarPrefs());
+  const [sidebarOpen, setSidebarOpen] = useState(sidebarPrefs.current.pinned);
+  const [sidebarPinned, setSidebarPinned] = useState(sidebarPrefs.current.pinned);
+  const [sidebarTab, setSidebarTab] = useState(sidebarPrefs.current.tab);
   const [presetNotesOpen, setPresetNotesOpen] = useState(false);
+  // The checkbox wall, folded away by default: the presets and what is on
+  // screen are the first layer, the full list is the second.
+  // Kutucuk duvarı, varsayılan olarak katlanmış: hazır düzenler ve ekranda
+  // olanlar birinci katman, tam liste ikinci.
+  const [allToggles, setAllToggles] = useState(false);
+  const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
+  const [barMenuOpen, setBarMenuOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const barMenuRef = useRef(null);
+  const shortcutsRef = useRef(null);
   const [view, setView] = useState('chart');
   const [quote, setQuote] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
@@ -1107,14 +1183,44 @@ function App() {
     activeToolRef.current = activeTool;
   }, [activeTool]);
 
+  // The keydown listener is installed once, so the 1-4 keys read the panel's
+  // state through refs rather than a stale closure.
+  // Tuş dinleyicisi bir kez kuruluyor; 1-4 tuşları panelin durumunu eski bir
+  // closure'dan değil ref'lerden okuyor.
+  const sidebarOpenRef = useRef(sidebarOpen);
+  const sidebarTabRef = useRef(sidebarTab);
+  const sidebarPinnedRef = useRef(sidebarPinned);
+  useEffect(() => {
+    sidebarOpenRef.current = sidebarOpen;
+    sidebarTabRef.current = sidebarTab;
+    sidebarPinnedRef.current = sidebarPinned;
+  }, [sidebarOpen, sidebarTab, sidebarPinned]);
+
   useEffect(() => {
     const id = setInterval(() => setSession(bistSession()), 30000);
     return () => clearInterval(id);
   }, []);
 
+  // A pointer press outside an open popover closes it.
+  // Açık bir açılır kutunun dışına basmak onu kapatıyor.
+  useEffect(() => {
+    if (!barMenuOpen && !shortcutsOpen) return undefined;
+    function handlePointerDown(e) {
+      if (barMenuOpen && !barMenuRef.current?.contains(e.target)) setBarMenuOpen(false);
+      if (shortcutsOpen && !shortcutsRef.current?.contains(e.target)) setShortcutsOpen(false);
+    }
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [barMenuOpen, shortcutsOpen]);
+
+  // Clicking something on the chart opens the panel on the tab that explains
+  // it, whether the panel was open or not.
+  // Grafikte bir şeye tıklamak, paneli onu açıklayan sekmede açıyor; panel
+  // açık mıydı kapalı mıydı fark etmiyor.
   function openSidebarTab(tab) {
     setSidebarTab(tab);
     setSidebarOpen(true);
+    saveSidebarPrefs({ tab, pinned: sidebarPinnedRef.current });
   }
 
   function handleSelectScanSymbol(sym) {
@@ -1251,6 +1357,25 @@ function App() {
     applyVisibility(next);
   }
 
+  // The rail: pressing the tab already open closes the panel, pressing another
+  // leaves it open and only swaps the content, so switching tabs is never a
+  // close-then-open.
+  // Şerit: açık olan sekmeye basmak paneli kapatır, başkasına basmak paneli
+  // açık bırakıp yalnız içeriği değiştirir; sekme değiştirmek asla kapat-aç
+  // olmuyor.
+  function handleRailTab(id) {
+    const closing = sidebarOpenRef.current && sidebarTabRef.current === id;
+    setSidebarOpen(!closing);
+    setSidebarTab(id);
+    saveSidebarPrefs({ tab: id, pinned: sidebarPinnedRef.current });
+  }
+
+  function handleTogglePin() {
+    const pinned = !sidebarPinnedRef.current;
+    setSidebarPinned(pinned);
+    saveSidebarPrefs({ tab: sidebarTabRef.current, pinned });
+  }
+
   function refreshMarkers() {
     applyMarkers(earningsMarkersRef.current, {
       earningsData: earningsRef.current,
@@ -1357,7 +1482,7 @@ function App() {
         const move = movesRef.current?.moves.find((m) => m.date === date);
         if (move) {
           setMoveDetail(move);
-          openSidebarTab('moves');
+          openSidebarTab('context');
         }
       }
       return;
@@ -1424,7 +1549,7 @@ function App() {
 
     const requestId = ++patternRequestRef.current;
     setPatternSearch({ loading: true, error: null, data: null });
-    openSidebarTab('patterns');
+    openSidebarTab('scan');
     try {
       const data = await fetchPatterns(symbol, start, end);
       if (requestId === patternRequestRef.current) setPatternSearch({ loading: false, error: null, data });
@@ -1483,12 +1608,25 @@ function App() {
           document.activeElement.blur();
         } else if (activeToolRef.current) {
           handleSelectTool(null);
-        } else {
+        } else if (selectedDrawingRef.current) {
           clearSelection();
+        } else {
+          // Nothing in hand and nothing selected: Esc is the panel's.
+          // Elde ve seçili bir şey yokken Esc panelin.
+          setSidebarOpen(false);
         }
         return;
       }
       if (isTyping()) return;
+
+      // 1-4 open the rail's tabs, in the rail's own order.
+      // 1-4 şeridin sekmelerini, şeridin sırasıyla açıyor.
+      const railIndex = Number(e.key) - 1;
+      if (Number.isInteger(railIndex) && railIndex >= 0 && railIndex < SIDEBAR_TABS.length) {
+        e.preventDefault();
+        handleRailTab(SIDEBAR_TABS[railIndex].id);
+        return;
+      }
 
       if (e.key === '/') {
         e.preventDefault();
@@ -1836,6 +1974,9 @@ function App() {
   // Okurun açtığı düzenlerin notları; her şey açıkken bir seçim yapılmamış olur.
   const activePresets = allVisible ? [] : PRESETS.filter((preset) => preset.groups.every((id) => visibility[id]));
   const canExtend = selectedDrawing && typeof selectedDrawing.getExtend === 'function';
+  const activeSidebarTab = SIDEBAR_TABS.find((tab) => tab.id === sidebarTab) ?? SIDEBAR_TABS[0];
+  const visibleGroups = TOGGLE_GROUPS.filter((g) => visibility[g.id]);
+  const visibleCount = visibleGroups.length;
 
   return (
     <LangContext.Provider value={str}>
@@ -1855,6 +1996,8 @@ function App() {
           '--text': t.text,
           '--text-strong': t.textStrong,
           '--text-dim': t.textDim,
+          '--text-prose': t.textProse,
+          '--text-faint': t.textFaint,
           '--up': t.up,
           '--down': t.down,
           '--accent-text': t.accentText,
@@ -1873,9 +2016,75 @@ function App() {
       >
         <style>{`
           .stc-root {
-            font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+            font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
             font-variant-numeric: tabular-nums;
             color: var(--text);
+          }
+          /* Scrollbars: the platform's are a wide light slab that reads as
+             part of the operating system, not of the app. These are a thin
+             bar in the app's own borders, with no track, no arrows and no
+             corner square, so a scrolling panel shows a line rather than a
+             second frame.
+             Firefox gets the same two colours through its own property; it
+             has no track, arrow or corner rule to set. */
+          /* Kaydırma çubukları: platformunki geniş ve açık bir levha,
+             uygulamanın değil işletim sisteminin parçası gibi duruyor.
+             Buradakiler uygulamanın kendi kenarlık renginde ince bir çubuk;
+             yolu, okları ve köşe karesi yok, böylece kayan panel ikinci bir
+             çerçeve değil bir çizgi gösteriyor.
+             Firefox aynı iki rengi kendi özelliğinden alıyor; onda yol, ok ya
+             da köşe kuralı yok. */
+          /* Only where the pseudo-elements below do not exist, i.e. Firefox.
+             Chrome drops every ::-webkit-scrollbar rule the moment one of
+             these standard properties is set, arrows included, so the two
+             cannot be given to the same browser. */
+          /* Yalnız aşağıdaki sözde öğelerin bulunmadığı yerde, yani
+             Firefox'ta. Chrome, bu standart özelliklerden biri verilir
+             verilmez bütün ::-webkit-scrollbar kurallarını düşürüyor, oklar
+             dahil; bu yüzden ikisi aynı tarayıcıya verilemiyor. */
+          @supports not selector(::-webkit-scrollbar) {
+            .stc-root * {
+              scrollbar-width: thin;
+              scrollbar-color: var(--separator-hover) transparent;
+            }
+          }
+          .stc-root ::-webkit-scrollbar {
+            width: 9px;
+            height: 9px;
+          }
+          .stc-root ::-webkit-scrollbar-track,
+          .stc-root ::-webkit-scrollbar-corner {
+            background: transparent;
+          }
+          .stc-root ::-webkit-scrollbar-thumb {
+            background: var(--separator-hover);
+            border-radius: 3px;
+            /* Drawn inside a transparent border so the bar sits off the edge
+               and does not touch the content it scrolls. */
+            /* Saydam bir kenarlığın içine çiziliyor ki çubuk kenardan ayrı
+               dursun ve kaydırdığı içeriğe değmesin. */
+            border: 2px solid transparent;
+            background-clip: content-box;
+          }
+          .stc-root ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-dim);
+            background-clip: content-box;
+          }
+          .stc-root ::-webkit-scrollbar-button {
+            display: none;
+          }
+          /* Sentence blocks: one weight, one line-height, one colour, so a
+             paragraph reads the same wherever it sits. */
+          /* Cümle blokları: tek ağırlık, tek satır yüksekliği, tek renk; ki
+             paragraf nerede durursa durur aynı okunsun. */
+          .stc-prose {
+            font-weight: 450;
+            line-height: 1.68;
+            color: var(--text-prose);
+          }
+          .stc-prose b, .stc-prose strong {
+            font-weight: 600;
+            color: var(--text-strong);
           }
           .stc-header {
             background: var(--panel-bg);
@@ -1887,7 +2096,7 @@ function App() {
             gap: 8px;
           }
           .stc-title {
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-weight: 600;
             font-size: 15px;
             letter-spacing: 0.02em;
@@ -1896,7 +2105,7 @@ function App() {
             padding: 0 2px;
           }
           .stc-input {
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 13px;
             font-weight: 500;
             text-transform: uppercase;
@@ -2019,7 +2228,7 @@ function App() {
             color: var(--text-strong);
           }
           .stc-section-title {
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 11px;
             font-weight: 600;
             letter-spacing: 0.08em;
@@ -2078,7 +2287,7 @@ function App() {
             flex-shrink: 0;
           }
           .stc-select {
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 12.5px;
             border: 1px solid var(--btn-border);
             background: var(--input-bg);
@@ -2121,7 +2330,7 @@ function App() {
             right: 7px;
             top: 50%;
             transform: translateY(-50%);
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 10.5px;
             line-height: 15px;
             color: var(--text-dim);
@@ -2131,13 +2340,14 @@ function App() {
             pointer-events: none;
           }
           .stc-mono {
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
           }
           .stc-muted {
             margin: 0;
-            font-size: 13px;
-            line-height: 1.55;
-            color: var(--text-dim);
+            font-size: 14px;
+            font-weight: 450;
+            line-height: 1.68;
+            color: var(--text-prose);
           }
           .stc-panel-title {
             font-size: 15px;
@@ -2158,7 +2368,7 @@ function App() {
             display: flex;
             align-items: center;
             gap: 8px;
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.14em;
@@ -2170,14 +2380,66 @@ function App() {
             height: 24px;
             background: var(--panel-border);
           }
+          .stc-chart-overlay {
+            position: absolute;
+            top: 10px;
+            left: 14px;
+            z-index: 15;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+            /* The wrapper is a hole the pointer falls through, so dragging the
+               chart still works beside the block. */
+            /* Sarmalayıcı, imlecin içinden düştüğü bir delik; böylece bloğun
+               yanından grafiği sürüklemek çalışmayı sürdürüyor. */
+            pointer-events: none;
+          }
+          .stc-chart-overlay > * {
+            pointer-events: auto;
+          }
+          /* No plate under it: the figures themselves are what fades back,
+             and come forward on hover or while the detail is open. */
+          /* Altında levha yok: geri çekilen şey rakamların kendisi; imleç
+             üstüne gelince ya da ayrıntı açıkken öne geliyorlar. */
           .stc-quote {
             display: flex;
             align-items: baseline;
             gap: 10px;
             white-space: nowrap;
+            padding: 0;
+            font-family: inherit;
+            background: none;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            opacity: 0.85;
+            transition: opacity 120ms ease;
+          }
+          .stc-quote:hover,
+          .stc-quote.is-open {
+            opacity: 1;
+          }
+          .stc-quote:focus-visible {
+            opacity: 1;
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+          }
+          /* Opened on purpose, so it is read at full strength. */
+          /* Bilerek açıldı, o yüzden tam güçte okunuyor. */
+          .stc-quote-detail {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 18px;
+            max-width: 520px;
+            padding: 0;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .stc-quote { transition: none; }
           }
           .stc-quote-price {
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 20px;
             font-weight: 600;
             color: var(--text-strong);
@@ -2203,7 +2465,7 @@ function App() {
             cursor: help;
           }
           .stc-rs b {
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-weight: 500;
           }
           .stc-rs-period {
@@ -2332,7 +2594,10 @@ function App() {
             flex: 1;
           }
           .stc-heat-foot {
-            font-size: 12px;
+            font-size: 12.5px;
+            font-weight: 450;
+            line-height: 1.68;
+            color: var(--text-prose);
             border-top: 1px solid var(--panel-border);
             padding-top: 10px;
           }
@@ -2377,14 +2642,15 @@ function App() {
           }
           .stc-preset-note {
             margin: 0;
-            font-size: 12px;
-            line-height: 1.55;
-            color: var(--text-dim);
+            font-size: 12.5px;
+            font-weight: 450;
+            line-height: 1.68;
+            color: var(--text-prose);
           }
           .stc-preset-note b {
             display: block;
             margin-bottom: 4px;
-            color: var(--text);
+            color: var(--text-strong);
             font-weight: 600;
           }
           .stc-preset-note ul {
@@ -2427,7 +2693,7 @@ function App() {
             border: none;
             background: transparent;
             color: var(--text-dim);
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 11px;
             font-weight: 600;
             cursor: pointer;
@@ -2460,6 +2726,87 @@ function App() {
           }
           .stc-icon-btn.is-active {
             color: var(--accent);
+          }
+          .stc-barmenu, .stc-shortcuts {
+            position: relative;
+            display: flex;
+            align-items: center;
+          }
+          .stc-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            z-index: 40;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 180px;
+            padding: 11px 12px;
+            background: var(--panel-bg);
+            border: 1px solid var(--btn-border);
+            border-radius: 4px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+          }
+          .stc-menu-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+          }
+          .stc-menu-label {
+            font-size: 12.5px;
+            color: var(--text-prose);
+          }
+          .stc-status-btn {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            background: transparent;
+            border: none;
+            border-radius: 3px;
+            color: var(--text-dim);
+            cursor: pointer;
+          }
+          .stc-status-btn:hover, .stc-status-btn.is-active {
+            color: var(--text-strong);
+          }
+          .stc-status-btn:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
+          }
+          .stc-shortcuts-pop {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            right: 0;
+            z-index: 40;
+            min-width: 240px;
+            padding: 11px 12px;
+            font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+            background: var(--panel-bg);
+            border: 1px solid var(--btn-border);
+            border-radius: 4px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            white-space: normal;
+          }
+          .stc-shortcut-row {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            padding: 3px 0;
+            font-size: 12.5px;
+            font-weight: 450;
+            line-height: 1.68;
+            color: var(--text-prose);
+          }
+          .stc-shortcut-row kbd {
+            flex-shrink: 0;
+            min-width: 62px;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 11px;
+            color: var(--text-strong);
           }
           .stc-rail {
             width: 48px;
@@ -2514,37 +2861,236 @@ function App() {
             background: var(--panel-bg);
             border-left: 1px solid var(--panel-border);
           }
-          .stc-tabs {
-            display: flex;
-            /* Wraps to a second row rather than clipping a label: the Turkish
-               names do not fit on one. */
-            /* Etiketi kesmek yerine ikinci satıra sarıyor: Türkçe adlar tek
-               satıra sığmıyor. */
-            flex-wrap: wrap;
+          .stc-panel-head {
             flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            height: 38px;
+            padding: 0 7px 0 12px;
             border-bottom: 1px solid var(--panel-border);
           }
-          .stc-tab {
-            flex: 1 1 auto;
-            height: 40px;
-            padding: 0 6px;
-            white-space: nowrap;
-            border: none;
+          .stc-panel-head-title {
+            flex-grow: 1;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-strong);
+          }
+          .stc-panel-rule {
+            border-top: 1px solid var(--panel-border);
+            margin: 16px 0;
+          }
+          /* The closed panel: a 44px strip the chart does not have to share
+             272px with. */
+          /* Kapalı panel: grafiğin 272 px'i paylaşmak zorunda olmadığı 44
+             px'lik şerit. */
+          .stc-panel-rail {
+            width: 44px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 0;
+            background: var(--panel-bg);
+            border-left: 1px solid var(--panel-border);
+          }
+          .stc-rail-tab {
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 1px solid transparent;
+            border-radius: 3px;
             background: transparent;
             color: var(--text-dim);
+            cursor: pointer;
+            transition: background-color 120ms ease, color 120ms ease;
+          }
+          .stc-rail-tab:hover {
+            background: var(--btn-bg-hover);
+            color: var(--text-strong);
+          }
+          .stc-rail-tab.is-open {
+            background: var(--accent-soft);
+            border-color: var(--accent);
+            color: var(--accent);
+          }
+          .stc-rail-tab:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: -2px;
+          }
+          .stc-rail-count {
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            color: var(--text-faint);
+            cursor: default;
+          }
+          .stc-notes {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+          }
+          .stc-notes-symbol {
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: var(--text-strong);
+          }
+          .stc-notes-box {
+            min-height: 180px;
+            resize: vertical;
+            padding: 10px 11px;
+            font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+            font-size: 13.5px;
+            font-weight: 450;
+            line-height: 1.68;
+            color: var(--text-strong);
+            background: var(--input-bg);
+            border: 1px solid var(--btn-border);
+            border-radius: 3px;
+            outline: none;
+            transition: border-color 120ms ease, box-shadow 120ms ease;
+          }
+          .stc-notes-box::placeholder {
+            color: var(--text-faint);
+          }
+          .stc-notes-box:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-ring);
+          }
+          .stc-notes-status {
+            min-height: 16px;
+            font-size: 12px;
+            color: var(--text-faint);
+          }
+          .stc-notes-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+          }
+          .stc-notes-other {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            padding: 7px 9px;
+            font-family: inherit;
+            text-align: left;
+            background: var(--btn-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 120ms ease;
+          }
+          .stc-notes-other:hover {
+            background: var(--btn-bg-hover);
+          }
+          .stc-notes-other:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
+          }
+          .stc-notes-other-symbol {
+            flex-shrink: 0;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-strong);
+          }
+          /* One line of the note, cut where the row ends: enough to recognise
+             which note it is without turning the list into a wall. */
+          /* Notun bir satırı, satırın bittiği yerde kesiliyor: hangi not
+             olduğunu tanımaya yeter, listeyi duvara çevirmez. */
+          .stc-notes-other-body {
+            flex-grow: 1;
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            font-size: 12.5px;
+            font-weight: 450;
+            color: var(--text-prose);
+          }
+          .stc-notes-other-when {
+            flex-shrink: 0;
+            font-size: 11px;
+            color: var(--text-faint);
+          }
+          .stc-onscreen {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+          }
+          .stc-onscreen-row {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 5px 6px 5px 9px;
+            background: var(--btn-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 3px;
+          }
+          .stc-onscreen-swatch {
+            width: 9px;
+            height: 9px;
+            flex-shrink: 0;
+            border-radius: 2px;
+          }
+          .stc-onscreen-name {
+            flex-grow: 1;
+            font-size: 13.5px;
+            color: var(--text-strong);
+          }
+          /* The second layer's lid. */
+          /* İkinci katmanın kapağı. */
+          .stc-fold {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            margin-top: 18px;
+            padding: 9px 10px;
             font-family: inherit;
             font-size: 12.5px;
             font-weight: 500;
+            text-align: left;
+            color: var(--text);
+            background: var(--btn-bg);
+            border: 1px solid var(--btn-border);
+            border-radius: 3px;
             cursor: pointer;
-            transition: color 120ms ease;
+            transition: background-color 120ms ease, color 120ms ease;
           }
-          .stc-tab:hover {
+          .stc-fold:hover {
+            background: var(--btn-bg-hover);
             color: var(--text-strong);
           }
-          .stc-tab.is-active {
-            color: var(--text-strong);
-            font-weight: 600;
-            box-shadow: inset 0 -2px 0 var(--accent);
+          .stc-fold:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
+          }
+          .stc-fold-chevron {
+            width: 0;
+            height: 0;
+            flex-shrink: 0;
+            border-left: 4.5px solid currentColor;
+            border-top: 3.5px solid transparent;
+            border-bottom: 3.5px solid transparent;
+            transition: transform 120ms ease;
+          }
+          .stc-fold-chevron.is-open {
+            transform: rotate(90deg);
+          }
+          .stc-fold-body {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-top: 8px;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .stc-fold-chevron { transition: none; }
           }
           .stc-tabpanel {
             flex-grow: 1;
@@ -2566,7 +3112,7 @@ function App() {
             padding: 0 16px;
             background: var(--panel-bg);
             border-top: 1px solid var(--panel-border);
-            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 11px;
             color: var(--text-dim);
             white-space: nowrap;
@@ -2610,8 +3156,10 @@ function App() {
             margin: 0;
             max-width: 320px;
             text-align: center;
-            font-size: 12px;
-            color: var(--text-dim);
+            font-size: 12.5px;
+            font-weight: 450;
+            line-height: 1.68;
+            color: var(--text-faint);
             animation: stc-fade 0.4s ease-out;
           }
           @keyframes stc-fade {
@@ -2643,8 +3191,7 @@ function App() {
           }
           .stc-seg button:focus-visible,
           .stc-icon-btn:focus-visible,
-          .stc-rail-btn:focus-visible,
-          .stc-tab:focus-visible {
+          .stc-rail-btn:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: -2px;
           }
@@ -2691,63 +3238,54 @@ function App() {
 
           <SymbolPicker symbol={symbol} onSelect={setSymbol} inputRef={symbolInputRef} />
 
-          {quote && (
-            <div className="stc-quote">
-              <span className="stc-quote-price">{quote.close.toFixed(2)}</span>
-              <span
-                className="stc-mono"
-                style={{ fontSize: '13px', fontWeight: 500, color: (quote.change ?? 0) >= 0 ? 'var(--up)' : 'var(--down)' }}
-              >
-                {signed(quote.change)}&nbsp;&nbsp;{signed(quote.changePct)}%
-              </span>
-            </div>
-          )}
-          {quote && (
-            <div className="stc-ohlc stc-mono">
-              <span>O <b>{quote.open.toFixed(2)}</b></span>
-              <span>H <b>{quote.high.toFixed(2)}</b></span>
-              <span>L <b>{quote.low.toFixed(2)}</b></span>
-              <span>V <b>{formatVolume(quote.volume)}</b></span>
-            </div>
-          )}
-          {relStrength && <RelativeStrengthBadge data={relStrength} str={str} />}
-
           <div style={{ flexGrow: 1 }} />
 
-          {visibility.earnings && earningsNext && (
-            <span style={{ fontSize: '12px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
-              {str.nextEarnings(formatDateTR(earningsNext))}
-            </span>
-          )}
           <span className="stc-session">
             <span className="stc-dot" style={{ background: session.open ? 'var(--up)' : 'var(--text-dim)' }} />
             {session.open ? str.sessionOpen(session.time) : str.sessionClosed(session.time)}
           </span>
-          <div className="stc-seg" role="group" aria-label="Language">
-            <button className={lang === 'en' ? 'is-active' : ''} aria-pressed={lang === 'en'} onClick={() => setLang('en')}>
-              EN
+
+          {/* Language and theme are set once and then left alone, so they sit
+              behind a menu instead of holding a place in the bar. */}
+          {/* Dil ve tema bir kez ayarlanıp bırakılıyor; bu yüzden barda yer
+              tutmak yerine menünün arkasında duruyorlar. */}
+          <div className="stc-barmenu" ref={barMenuRef}>
+            <button
+              className={`stc-icon-btn stc-bordered ${barMenuOpen ? 'is-active' : ''}`}
+              onClick={() => setBarMenuOpen((open) => !open)}
+              aria-expanded={barMenuOpen}
+              aria-label={str.moreMenu}
+              title={str.moreMenu}
+            >
+              <MoreIcon size={15} />
             </button>
-            <button className={lang === 'tr' ? 'is-active' : ''} aria-pressed={lang === 'tr'} onClick={() => setLang('tr')}>
-              TR
-            </button>
+            {barMenuOpen && (
+              <div className="stc-menu" role="menu">
+                <div className="stc-menu-row">
+                  <span className="stc-menu-label">{str.language}</span>
+                  <div className="stc-seg" role="group" aria-label={str.language}>
+                    <button className={lang === 'en' ? 'is-active' : ''} aria-pressed={lang === 'en'} onClick={() => setLang('en')}>
+                      EN
+                    </button>
+                    <button className={lang === 'tr' ? 'is-active' : ''} aria-pressed={lang === 'tr'} onClick={() => setLang('tr')}>
+                      TR
+                    </button>
+                  </div>
+                </div>
+                <div className="stc-menu-row">
+                  <span className="stc-menu-label">{str.theme}</span>
+                  <button
+                    className="stc-icon-btn stc-bordered"
+                    onClick={() => setDarkMode((d) => !d)}
+                    aria-label={darkMode ? str.lightMode : str.darkMode}
+                    title={darkMode ? str.lightMode : str.darkMode}
+                  >
+                    {darkMode ? <SunIcon size={15} /> : <MoonIcon size={15} />}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-          <button
-            className="stc-icon-btn stc-bordered"
-            onClick={() => setDarkMode((d) => !d)}
-            aria-label={darkMode ? str.lightMode : str.darkMode}
-            title={darkMode ? str.lightMode : str.darkMode}
-          >
-            {darkMode ? <SunIcon size={15} /> : <MoonIcon size={15} />}
-          </button>
-          <button
-            className={`stc-icon-btn stc-bordered ${sidebarOpen ? 'is-active' : ''}`}
-            onClick={() => setSidebarOpen((open) => !open)}
-            aria-label={str.togglePanel}
-            aria-pressed={sidebarOpen}
-            title={str.togglePanel}
-          >
-            <PanelIcon size={15} />
-          </button>
         </header>
 
         <div style={{ flexGrow: 1, display: view === 'chart' ? 'flex' : 'none', minHeight: 0 }}>
@@ -2799,6 +3337,47 @@ function App() {
               ref={chartContainerRef}
               style={{ position: 'absolute', inset: 0, cursor: activeTool ? 'crosshair' : 'default' }}
             />
+
+            {/* The price sits on the chart it is drawn from, and is still the
+                handle for the rest: open, high, low, volume, relative
+                strength and the next statement date are in what it opens. */}
+            {/* Fiyat, çizildiği grafiğin üstünde duruyor ve gerisinin kulbu
+                olmayı sürdürüyor: açılış, yüksek, düşük, hacim, göreli güç ve
+                sıradaki bilanço tarihi açtığı şeyin içinde. */}
+            {quote && (
+              <div className="stc-chart-overlay">
+                <button
+                  className={`stc-quote ${quoteDetailOpen ? 'is-open' : ''}`}
+                  onClick={() => setQuoteDetailOpen((open) => !open)}
+                  aria-expanded={quoteDetailOpen}
+                  title={str.quoteDetailHint}
+                >
+                  <span className="stc-quote-price">{quote.close.toFixed(2)}</span>
+                  <span
+                    className="stc-mono"
+                    style={{ fontSize: '13px', fontWeight: 500, color: (quote.change ?? 0) >= 0 ? 'var(--up)' : 'var(--down)' }}
+                  >
+                    {signed(quote.change)}&nbsp;&nbsp;{signed(quote.changePct)}%
+                  </span>
+                </button>
+                {quoteDetailOpen && (
+                  <div className="stc-quote-detail">
+                    <div className="stc-ohlc stc-mono">
+                      <span>O <b>{quote.open.toFixed(2)}</b></span>
+                      <span>H <b>{quote.high.toFixed(2)}</b></span>
+                      <span>L <b>{quote.low.toFixed(2)}</b></span>
+                      <span>V <b>{formatVolume(quote.volume)}</b></span>
+                    </div>
+                    {relStrength && <RelativeStrengthBadge data={relStrength} str={str} />}
+                    {visibility.earnings && earningsNext && (
+                      <span style={{ fontSize: '12px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+                        {str.nextEarnings(formatDateTR(earningsNext))}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {loading && !error && (
               <div className="stc-loading" role="status" aria-live="polite">
@@ -2875,24 +3454,28 @@ function App() {
           </main>
 
           <aside className="stc-sidebar" style={{ display: sidebarOpen ? 'flex' : 'none' }}>
-            <div className="stc-tabs" role="tablist">
-              {SIDEBAR_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  role="tab"
-                  aria-selected={sidebarTab === tab.id}
-                  className={`stc-tab ${sidebarTab === tab.id ? 'is-active' : ''}`}
-                  onClick={() => setSidebarTab(tab.id)}
-                >
-                  {str[tab.labelKey]}
-                </button>
-              ))}
+            <div className="stc-panel-head">
+              <span className="stc-panel-head-title stc-mono">{str[activeSidebarTab.labelKey]}</span>
+              <button
+                className={`stc-icon-btn ${sidebarPinned ? 'is-active' : ''}`}
+                onClick={handleTogglePin}
+                aria-pressed={sidebarPinned}
+                aria-label={str.pinPanel}
+                title={str.pinPanel}
+              >
+                <PinIcon size={14} />
+              </button>
+              <button
+                className="stc-icon-btn"
+                onClick={() => setSidebarOpen(false)}
+                aria-label={str.closePanel}
+                title={str.closePanel}
+              >
+                <CloseIcon size={14} />
+              </button>
             </div>
 
             <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'indicators'}>
-              <button className="stc-toggle-all" onClick={handleToggleAll}>
-                {allVisible ? str.hideAll : str.showAll}
-              </button>
               <div className="stc-section-title">{str.sectionPresets}</div>
               <div className="stc-preset-grid">
                 {PRESETS.map((preset) => (
@@ -2934,52 +3517,129 @@ function App() {
                   <p className="stc-preset-note is-disclaimer">{str.presetNotesDisclaimer}</p>
                 </div>
               )}
-              {PANEL_SECTIONS.map((section) => (
-                <div key={section.titleKey}>
-                  <div className="stc-section-title">{str[section.titleKey]}</div>
-                  <div className="stc-checkbox-grid">
-                    {section.groups.map((group) => (
-                      <label key={group.id} className="stc-checkbox-row" title={str.groupHints[group.id]}>
-                        <input
-                          type="checkbox"
-                          checked={visibility[group.id]}
-                          onChange={() => handleToggle(group.id)}
-                        />
-                        {str.groups[group.id]}
-                      </label>
-                    ))}
-                  </div>
-                  {section.titleKey === 'sectionIndicators' && visibility.ma && (
-                    <MaEditor config={maConfig} onChange={handleMaConfigChange} />
-                  )}
+
+              {/* First layer: the sets, and what they put on the chart. The
+                  reader manages the chart from this list and never has to
+                  find the matching checkbox below. */}
+              {/* Birinci katman: düzenler ve grafiğe koydukları. Okur grafiği
+                  bu listeden yönetiyor, aşağıdaki kutucuğu bulmak zorunda
+                  kalmıyor. */}
+              <div className="stc-section-title">{str.sectionOnScreen(visibleCount)}</div>
+              {visibleCount === 0 ? (
+                <p className="stc-muted" style={{ fontSize: '12.5px' }}>{str.onScreenEmpty}</p>
+              ) : (
+                <div className="stc-onscreen">
+                  {visibleGroups.map((group) => (
+                    <div key={group.id} className="stc-onscreen-row">
+                      <span
+                        className="stc-onscreen-swatch"
+                        style={{ background: GROUP_COLORS[group.id] ?? NEUTRAL_SWATCH }}
+                      />
+                      <span className="stc-onscreen-name">{str.groups[group.id]}</span>
+                      <button
+                        className="stc-icon-btn"
+                        style={{ width: '22px', height: '22px' }}
+                        onClick={() => handleToggle(group.id)}
+                        aria-label={str.removeFromChart(str.groups[group.id])}
+                        title={str.removeFromChart(str.groups[group.id])}
+                      >
+                        <CloseIcon size={12} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+              {visibility.ma && <MaEditor config={maConfig} onChange={handleMaConfigChange} />}
+
+              {/* Second layer: the whole list, folded away. */}
+              {/* İkinci katman: tam liste, katlanmış. */}
+              <button
+                className="stc-fold"
+                onClick={() => setAllToggles((open) => !open)}
+                aria-expanded={allToggles}
+              >
+                <span className={`stc-fold-chevron ${allToggles ? 'is-open' : ''}`} aria-hidden="true" />
+                {str.allIndicators(TOGGLE_GROUPS.length)}
+              </button>
+              {allToggles && (
+                <div className="stc-fold-body">
+                  <button className="stc-toggle-all" onClick={handleToggleAll}>
+                    {allVisible ? str.hideAll : str.showAll}
+                  </button>
+                  {PANEL_SECTIONS.map((section) => (
+                    <div key={section.titleKey}>
+                      <div className="stc-section-title">{str[section.titleKey]}</div>
+                      <div className="stc-checkbox-grid">
+                        {section.groups.map((group) => (
+                          <label key={group.id} className="stc-checkbox-row" title={str.groupHints[group.id]}>
+                            <input
+                              type="checkbox"
+                              checked={visibility[group.id]}
+                              onChange={() => handleToggle(group.id)}
+                            />
+                            {str.groups[group.id]}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'scan'}>
               <VolumeScanWidget onSelectSymbol={handleSelectScanSymbol} />
-            </div>
-
-            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'patterns'}>
+              <div className="stc-panel-rule" />
               <PatternSearchWidget state={patternSearch} onClose={handleClosePatternSearch} />
-            </div>
-
-            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'moves'}>
-              <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />
-              <div style={{ borderTop: '1px solid var(--panel-border)', margin: '16px 0' }} />
-              <ReactionProfileWidget symbol={symbol} />
-            </div>
-
-            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'psych'}>
+              <div className="stc-panel-rule" />
               <AnchorsWidget data={anchorsData} />
-              <div style={{ borderTop: '1px solid var(--panel-border)', margin: '16px 0' }} />
+              <div className="stc-panel-rule" />
               <AnchorScanWidget onSelectSymbol={handleSelectScanSymbol} />
             </div>
 
-            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'sectors'}>
+            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'context'}>
+              <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />
+              <div className="stc-panel-rule" />
+              <ReactionProfileWidget symbol={symbol} />
+              <div className="stc-panel-rule" />
               <SectorHeatWidget symbol={symbol} onSelectSymbol={handleSelectScanSymbol} />
             </div>
+
+            <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'notes'}>
+              <NotesPanel symbol={symbol} onSelectSymbol={handleSelectScanSymbol} />
+            </div>
           </aside>
+
+          <nav className="stc-panel-rail" aria-label={str.togglePanel}>
+            {SIDEBAR_TABS.map((tab, i) => {
+              const open = sidebarOpen && sidebarTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  className={`stc-rail-tab ${open ? 'is-open' : ''}`}
+                  onClick={() => handleRailTab(tab.id)}
+                  aria-expanded={open}
+                  aria-label={`${str[tab.labelKey]} (${i + 1})`}
+                  title={`${str[tab.labelKey]} · ${i + 1}`}
+                >
+                  <tab.Icon size={16} />
+                </button>
+              );
+            })}
+            <div className="stc-rail-divider" />
+            {/* The count stays readable with the panel shut, which is the
+                point: you can see how much is on the chart without opening
+                anything. */}
+            {/* Sayı panel kapalıyken de okunur kalıyor, mesele bu: hiçbir şey
+                açmadan grafikte ne kadar şey olduğunu görüyorsun. */}
+            <span
+              className="stc-rail-count stc-mono"
+              title={str.openIndicators(visibleCount)}
+              aria-label={str.openIndicators(visibleCount)}
+            >
+              {visibleCount}
+            </span>
+          </nav>
         </div>
 
         {view === 'fundamentals' && <FundamentalsView symbol={symbol} />}
@@ -2989,7 +3649,32 @@ function App() {
           <span>{symbol} · 1D · BIST</span>
           {updatedAt && <span>{str.updated(formatClock(updatedAt))}</span>}
           <div style={{ flexGrow: 1 }} />
-          <span>{str.shortcutsHint}</span>
+          {/* The shortcut line was permanent furniture for something read
+              once; it now sits behind the "?". */}
+          {/* Kısayol satırı bir kez okunan bir şey için kalıcı mobilyaydı;
+              artık "?"nin arkasında duruyor. */}
+          <div className="stc-shortcuts" ref={shortcutsRef}>
+            <button
+              className={`stc-status-btn ${shortcutsOpen ? 'is-active' : ''}`}
+              onClick={() => setShortcutsOpen((open) => !open)}
+              aria-expanded={shortcutsOpen}
+              aria-label={str.shortcutsTitle}
+              title={str.shortcutsTitle}
+            >
+              <HelpIcon size={13} />
+            </button>
+            {shortcutsOpen && (
+              <div className="stc-shortcuts-pop" role="dialog" aria-label={str.shortcutsTitle}>
+                <div className="stc-section-title" style={{ margin: '0 0 8px' }}>{str.shortcutsTitle}</div>
+                {str.shortcuts.map((row) => (
+                  <div key={row.keys} className="stc-shortcut-row">
+                    <kbd>{row.keys}</kbd>
+                    <span>{row.what}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <span>{str.dataSources}</span>
         </footer>
       </div>

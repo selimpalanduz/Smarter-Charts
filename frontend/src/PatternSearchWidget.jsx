@@ -128,7 +128,7 @@ function PatternSearchWidget({ state, onClose }) {
             </div>
           )}
 
-          <span style={{ opacity: 0.5, fontSize: '11px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-faint)' }}>
             {t.sparklineLegend(FORWARD_BARS)}
           </span>
         </>

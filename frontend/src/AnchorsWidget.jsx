@@ -69,8 +69,8 @@ function RoundEffect({ effect }) {
       <span className="stc-mono">
         {t.roundEffectRates(round.toFixed(1), control.toFixed(1))}
       </span>
-      <span style={{ opacity: 0.8, lineHeight: 1.45 }}>{verdict}</span>
-      <span style={{ opacity: 0.5, fontSize: '11.5px' }}>
+      <span className="stc-prose">{verdict}</span>
+      <span style={{ fontSize: '12.5px', color: 'var(--text-faint)' }}>
         {t.roundEffectSample(effect.round.held + effect.round.broke, effect.control.held + effect.control.broke)}
       </span>
     </div>
@@ -101,7 +101,7 @@ function AnchorsWidget({ data }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
       <span className="stc-panel-title">{t.anchorsTitle}</span>
-      <span style={{ opacity: 0.75, lineHeight: 1.45 }}>{t.anchorsIntro}</span>
+      <span className="stc-prose">{t.anchorsIntro}</span>
 
       <div
         style={{
@@ -137,7 +137,7 @@ function AnchorsWidget({ data }) {
       <span className="stc-section-title" style={{ margin: '6px 0 0', borderBottom: 'none', paddingBottom: 0 }}>{t.roundEffectTitle}</span>
       <RoundEffect effect={data.roundEffect} />
 
-      <span style={{ opacity: 0.5, fontSize: '11.5px', lineHeight: 1.45 }}>{t.anchorsMethod}</span>
+      <span className="stc-prose" style={{ fontSize: '12.5px', color: 'var(--text-faint)' }}>{t.anchorsMethod}</span>
     </div>
   );
 }

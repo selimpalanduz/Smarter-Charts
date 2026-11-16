@@ -54,7 +54,7 @@ function DisclosureItem({ disclosure, text }) {
       </span>
       <strong style={{ fontSize: '14.5px', color: 'var(--text-strong)', lineHeight: 1.35 }}>{disclosure.summary || disclosure.subject}</strong>
       {text === undefined && !disclosure.routine && <span style={{ opacity: 0.5 }}>{t.textLoading}</span>}
-      {text && <span style={{ opacity: 0.85, lineHeight: 1.5 }}>{text}</span>}
+      {text && <span className="stc-prose">{text}</span>}
       <a
         href={disclosure.url}
         target="_blank"
@@ -136,7 +136,7 @@ function MoveReasonsWidget({ move, onClose }) {
         ))}
       </div>
 
-      {note && <span style={{ opacity: 0.75 }}>{note}</span>}
+      {note && <span className="stc-prose">{note}</span>}
 
       <span className="stc-section-title" style={{ margin: '6px 0 0', borderBottom: 'none', paddingBottom: 0 }}>{t.sameDayDisclosures}</span>
       {move.disclosures.length === 0 && (

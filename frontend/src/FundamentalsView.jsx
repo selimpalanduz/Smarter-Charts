@@ -274,7 +274,7 @@ const FUND_CSS = `
 }
 .stc-fund tbody td {
   text-align: right;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 /* The row name stays put while the quarters scroll, and a rule marks where
    one year ends and the next begins — the two things a reader loses when the
@@ -348,14 +348,14 @@ const FUND_CSS = `
   display: flex;
   align-items: baseline;
   gap: 5px;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 21px;
   font-weight: 600;
   color: var(--text-strong);
   letter-spacing: -0.01em;
 }
 .stc-fund-kpi-value span {
-  font-family: 'IBM Plex Sans', ui-sans-serif, sans-serif;
+  font-family: 'Archivo', ui-sans-serif, sans-serif;
   font-size: 10.5px;
   font-weight: 400;
   color: var(--text-dim);
@@ -366,7 +366,7 @@ const FUND_CSS = `
   justify-content: space-between;
   gap: 8px;
   margin-top: 6px;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 11.5px;
 }
 .stc-fund-card {
@@ -383,7 +383,7 @@ const FUND_CSS = `
 }
 .stc-fund-card-head h3 { margin: 0; }
 .stc-fund-card-unit {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10.5px;
   color: var(--text-dim);
 }
@@ -403,7 +403,7 @@ const FUND_CSS = `
   border-radius: 3px;
   padding: 6px 9px;
   pointer-events: none;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 .stc-fund-tip-label { font-size: 10px; color: var(--text-dim); }
 .stc-fund-tip-value { font-size: 13px; font-weight: 600; color: var(--text-strong); }
@@ -466,7 +466,7 @@ const FUND_CSS = `
 .stc-fund-band-foot {
   display: flex;
   justify-content: space-between;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 9.5px;
   color: var(--text-dim);
 }
@@ -523,13 +523,13 @@ const FUND_CSS = `
   font-size: 11.5px;
 }
 .stc-fund-val-top b {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 15px;
   font-weight: 600;
   color: var(--text-strong);
 }
 .stc-fund-val-side {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
   color: var(--text-dim);
   margin-top: 2px;
@@ -542,7 +542,7 @@ const FUND_CSS = `
   line-height: 1.7;
 }
 .stc-fund-meta b {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-weight: 500;
   color: var(--text-strong);
 }
@@ -612,7 +612,7 @@ const FUND_CSS = `
   letter-spacing: 0.01em;
 }
 .stc-fund-detail-kind {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 11px;
   color: var(--text-dim);
 }
@@ -628,20 +628,20 @@ const FUND_CSS = `
   display: flex;
   align-items: baseline;
   gap: 5px;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 26px;
   font-weight: 600;
   color: var(--text-strong);
   letter-spacing: -0.01em;
 }
 .stc-fund-stat-big span {
-  font-family: 'IBM Plex Sans', ui-sans-serif, sans-serif;
+  font-family: 'Archivo', ui-sans-serif, sans-serif;
   font-size: 11px;
   font-weight: 400;
   color: var(--text-dim);
 }
 .stc-fund-stat {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 17px;
   font-weight: 600;
 }
