@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import borsapy as bp
 import pandas as pd
 import numpy as np
+import indices
 import kap
 import price_cache
 from fundamentals import schema, statements
@@ -376,6 +377,9 @@ def _valuation_band(
     `per_share` çağrılmadan geçiriliyor; böylece önbellekten dönen cevap
     hiçbir tablo sorgusuna mal olmuyor.
     """
+    if indices.is_index(symbol):
+        return {"symbol": symbol, "supported": False, "reason": "index"}
+
     now = time.time()
     cached = cache.get(symbol)
     if cached and (now - cached[0]) < FUNDAMENTALS_CACHE_TTL:
@@ -563,16 +567,26 @@ def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bo
     stale = price_cache.maybe_refresh_recent(symbol, end)
     history_pending = price_cache.history_pending(symbol)
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        price_future = executor.submit(
-            price_cache.query_range, symbol, buffered_start.strftime("%Y-%m-%d"), end
-        )
-        eps_future = executor.submit(get_ttm_eps, symbol)
-        bvps_future = executor.submit(get_bvps, symbol)
+    # An index has no earnings and no book value, so the two valuation
+    # lookups are skipped rather than left to fail: nothing to look up, and
+    # the request is a third of the work.
+    # Endeksin kârı da defter değeri de yok; iki değerleme araması
+    # başarısızlığa bırakılmak yerine atlanıyor: arayacak bir şey yok ve
+    # istek üçte bir işe iniyor.
+    if indices.is_index(symbol):
+        df = price_cache.query_range(symbol, buffered_start.strftime("%Y-%m-%d"), end)
+        ttm_eps = bvps = None
+    else:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            price_future = executor.submit(
+                price_cache.query_range, symbol, buffered_start.strftime("%Y-%m-%d"), end
+            )
+            eps_future = executor.submit(get_ttm_eps, symbol)
+            bvps_future = executor.submit(get_bvps, symbol)
 
-        df = price_future.result()
-        ttm_eps = eps_future.result()
-        bvps = bvps_future.result()
+            df = price_future.result()
+            ttm_eps = eps_future.result()
+            bvps = bvps_future.result()
 
     df = bp.add_indicators(df)
     for period in MA_PERIODS:
@@ -581,16 +595,21 @@ def get_price_history(symbol: str, start: str, end: str) -> tuple[list[dict], bo
     df = df.reset_index()
     df.columns = [str(c) for c in df.columns]
 
-    try:
-        df = attach_pe_series(df, ttm_eps)
-    except Exception:
+    if ttm_eps is None:
         df["PE"] = None
-    df = attach_pe_yoy(df)
-
-    try:
-        df = attach_pb_series(df, bvps)
-    except Exception:
+        df["PE_PrevYear"] = None
         df["PB"] = None
+    else:
+        try:
+            df = attach_pe_series(df, ttm_eps)
+        except Exception:
+            df["PE"] = None
+        df = attach_pe_yoy(df)
+
+        try:
+            df = attach_pb_series(df, bvps)
+        except Exception:
+            df["PB"] = None
 
     if "Date" in df.columns:
         df["Date"] = df["Date"].astype(str)

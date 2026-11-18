@@ -15,6 +15,8 @@ rakamı için TÜFE yanlış deflatör olduğundan "usd-real" diye bir şey yok.
 
 from fastapi import APIRouter, HTTPException, Query
 
+import indices
+
 from . import store, valuation, warmer
 from .schema import CURRENCY_TRY, CURRENCY_USD
 from .statements import QUARTERS, quarterly
@@ -29,6 +31,20 @@ BASES = {
 }
 DEFAULT_BASIS = "try-real"
 MAX_QUARTERS = 40
+
+
+def _reject_index(symbol: str) -> None:
+    """
+    An index has no statements to report. Said plainly here rather than
+    handed to the statement store, which would spend a request finding out.
+
+    Endeksin raporlayacak tablosu yok. Bunu, öğrenmek için bir istek
+    harcayacak olan tablo deposuna bırakmak yerine burada açıkça söylüyoruz.
+    """
+    if indices.is_index(symbol):
+        raise HTTPException(
+            status_code=404, detail={"code": "index_has_no_statements", "symbol": symbol.upper()}
+        )
 
 
 def _resolve(basis: str) -> tuple[str, bool]:
@@ -49,6 +65,7 @@ def get_statements(
     refresh: bool = False,
 ):
     """Every reported line, single-quarter, on the requested basis."""
+    _reject_index(symbol)
     currency, real = _resolve(basis)
     try:
         return quarterly(symbol, quarters=quarters, real=real, currency=currency, refresh=refresh)
@@ -65,6 +82,7 @@ def get_summary(
     refresh: bool = False,
 ):
     """The curated sections, quarterly or annual."""
+    _reject_index(symbol)
     if period not in (QUARTER, ANNUAL):
         raise HTTPException(
             status_code=400, detail={"code": "unknown_period", "allowed": [QUARTER, ANNUAL]}
@@ -88,6 +106,7 @@ def get_valuation(symbol: str, refresh: bool = False):
     Değerleme rasyoları; taban almıyor: oran birimsiz olduğu için cevap lirada
     da dolarda da aynı sayı.
     """
+    _reject_index(symbol)
     try:
         return valuation.ratios(symbol, refresh=refresh)
     except Exception as e:

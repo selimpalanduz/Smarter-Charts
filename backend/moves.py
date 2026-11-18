@@ -10,6 +10,7 @@ from datetime import datetime, time as dtime, timedelta
 import numpy as np
 import pandas as pd
 
+import indices
 import kap
 import price_cache
 
@@ -55,6 +56,13 @@ def get_moves(symbol: str) -> dict:
     Fiyat önbelleğini frontend'in önce çağırdığı /api/price ısıtıyor; burada sadece XU100 ısıtılır.
     """
     symbol = symbol.upper()
+    # An index files nothing and is the yardstick the moves are measured
+    # against, so there is nothing here to explain.
+    # Endeks bildirim yapmıyor ve hareketlerin ölçüldüğü cetvelin kendisi;
+    # burada açıklanacak bir şey yok.
+    if indices.is_index(symbol):
+        return {"moves": []}
+
     now = time.time()
     cached = _cache.get(symbol)
     if cached and now - cached[0] < CACHE_TTL:

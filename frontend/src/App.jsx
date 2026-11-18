@@ -29,6 +29,7 @@ import SectorHeatWidget from './SectorHeatWidget.jsx';
 import NotesPanel from './NotesPanel.jsx';
 import { API_BASE } from './config.js';
 import { STRINGS, LangContext, useT } from './i18n.js';
+import { useSymbolKind, useSymbolName } from './symbolList.js';
 import { THEME, setPalette, colors } from './theme.js';
 import {
   LogoMark,
@@ -457,6 +458,33 @@ const GROUP_COLORS = {
   pb: '#7c3aed',
 };
 const NEUTRAL_SWATCH = 'var(--text-dim)';
+
+// Groups that need a company behind the symbol: earnings dates and the KAP
+// disclosures that explain a move, and the two valuation panes. An index has
+// none of them, so on an index they leave the panel rather than sit there as
+// switches that draw nothing.
+// Sembolün arkasında şirket gerektiren gruplar: bilanço tarihleri, bir
+// hareketi açıklayan KAP bildirimleri ve iki değerleme paneli. Endeksin
+// hiçbiri yok; bu yüzden endekste hiçbir şey çizmeyen düğmeler olarak
+// durmak yerine panelden çıkıyorlar.
+const STOCK_ONLY_GROUPS = ['pe', 'pb', 'earnings', 'moves'];
+
+// The visibility map a symbol of this kind can actually honour. The chart is
+// built from this rather than from the raw map: an index built from the raw
+// one would open a P/E pane that no series ever draws into, and the switch
+// that would close it is not in the index's list.
+// Bu türden bir sembolün gerçekten yerine getirebileceği görünürlük
+// haritası. Grafik ham haritadan değil bundan kuruluyor: ham haritadan kurulan
+// bir endeks, hiçbir serinin çizmediği bir F/K paneli açardı ve onu
+// kapatacak düğme endeksin listesinde yok.
+function visibilityFor(kind, vis) {
+  if (kind !== 'index') return vis;
+  const next = { ...vis };
+  STOCK_ONLY_GROUPS.forEach((id) => {
+    next[id] = false;
+  });
+  return next;
+}
 
 const OTHER_TOOL_IDS = ['srZones', 'autoFib', 'costProfile', 'earnings', 'moves', 'anchors'];
 const PANEL_SECTIONS = [
@@ -1162,6 +1190,15 @@ function App() {
 
   const [symbol, setSymbol] = useState('THYAO');
   const symbolInputRef = useRef(null);
+  // What is loaded: a stock or one of the indices. Null until the symbol
+  // list arrives, which is why the stock-only parts are keyed off `isIndex`
+  // being true rather than off `symbolKind` being "stock".
+  // Yüklü olan şey: hisse mi, endekslerden biri mi. Sembol listesi gelene
+  // kadar null; yalnız hisseye ait kısımlar bu yüzden `symbolKind`'ın
+  // "stock" olmasına değil, `isIndex`'in doğru olmasına bağlı.
+  const symbolKind = useSymbolKind(symbol);
+  const symbolName = useSymbolName(symbol);
+  const isIndex = symbolKind === 'index';
 
   const [activeTool, setActiveTool] = useState(null);
   const activeToolRef = useRef(null);
@@ -1178,6 +1215,23 @@ function App() {
   const [selectedExtend, setSelectedExtend] = useState({ left: false, right: false });
 
   const t = darkMode ? THEME.dark : THEME.light;
+
+  // What this symbol has to show. On an index the stock-only groups are not
+  // greyed out but gone, and so is the set built out of them — a switch that
+  // can only disappoint is worse than no switch.
+  // Bu sembolün gösterecek olduğu şeyler. Endekste yalnız hisseye ait gruplar
+  // soluk değil, yok; onlardan kurulu hazır düzen de yok — ancak hayal
+  // kırıklığı verebilecek bir düğme, hiç düğme olmamasından kötü.
+  const availableGroups = isIndex
+    ? TOGGLE_GROUPS.filter((g) => !STOCK_ONLY_GROUPS.includes(g.id))
+    : TOGGLE_GROUPS;
+  const availablePresets = isIndex
+    ? PRESETS.filter((preset) => !preset.groups.some((id) => STOCK_ONLY_GROUPS.includes(id)))
+    : PRESETS;
+  const panelSections = PANEL_SECTIONS.map((section) => ({
+    ...section,
+    groups: section.groups.filter((g) => availableGroups.some((a) => a.id === g.id)),
+  }));
 
   useEffect(() => {
     activeToolRef.current = activeTool;
@@ -1344,8 +1398,12 @@ function App() {
   }
 
   function handleToggleAll() {
-    const target = !TOGGLE_GROUPS.every((g) => visibility[g.id]);
-    applyVisibility(Object.fromEntries(TOGGLE_GROUPS.map((g) => [g.id, target])));
+    const target = !availableGroups.every((g) => visibility[g.id]);
+    const next = { ...visibility };
+    availableGroups.forEach((g) => {
+      next[g.id] = target;
+    });
+    applyVisibility(next);
   }
 
   function handlePreset(preset) {
@@ -1770,16 +1828,17 @@ function App() {
         });
         chartRef.current = chart;
 
+        const shown = visibilityFor(symbolKind, visibility);
         PANE0_SERIES.forEach(({ key, type, options }) => {
           const group = OVERLAY_GROUPS.find((g) => g.keys.includes(key));
-          const visible = group ? visibility[group.id] : true;
+          const visible = group ? shown[group.id] : true;
           seriesMapRef.current[key] = chart.addSeries(type, { ...options, visible }, 0);
         });
-        syncMaSeries(chart, seriesMapRef.current, maConfigRef.current, visibility.ma, []);
+        syncMaSeries(chart, seriesMapRef.current, maConfigRef.current, shown.ma, []);
         chart.panes()[0].setStretchFactor(MAIN_PANE_STRETCH);
         applyChartTheme(chart, seriesMapRef.current);
 
-        rebuildDedicatedPanes(chart, seriesMapRef.current, visibility, bandExtras());
+        rebuildDedicatedPanes(chart, seriesMapRef.current, shown, bandExtras());
         applySeriesTitles(seriesMapRef.current, STRINGS[langRef.current].seriesTitles);
 
         loadedData = data;
@@ -1787,14 +1846,14 @@ function App() {
         setQuote(buildQuote(data));
         setUpdatedAt(new Date());
         renderAllSeries(seriesMapRef.current, loadedData);
-        applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, visibility.srZones);
-        applyAutoFib(seriesMapRef.current.candle, autoFibRef, swingRef.current, visibility.autoFib);
-        applyCostProfile(seriesMapRef.current.candle, costProfilePrimitiveRef, costProfileRef.current, visibility.costProfile, STRINGS[langRef.current]);
+        applySrZones(seriesMapRef.current.candle, srPrimitivesRef, srZonesRef.current, shown.srZones);
+        applyAutoFib(seriesMapRef.current.candle, autoFibRef, swingRef.current, shown.autoFib);
+        applyCostProfile(seriesMapRef.current.candle, costProfilePrimitiveRef, costProfileRef.current, shown.costProfile, STRINGS[langRef.current]);
         earningsMarkersRef.current = createSeriesMarkers(seriesMapRef.current.candle, []);
-        earningsVisibleRef.current = visibility.earnings;
-        movesVisibleRef.current = visibility.moves;
-        anchorsVisibleRef.current = visibility.anchors;
-        crossVisibleRef.current = visibility.maCross;
+        earningsVisibleRef.current = shown.earnings;
+        movesVisibleRef.current = shown.moves;
+        anchorsVisibleRef.current = shown.anchors;
+        crossVisibleRef.current = shown.maCross;
         refreshMarkers();
         const lastIdx = loadedData.length - 1;
         const dailyChange = new DailyChangePrimitive();
@@ -1969,10 +2028,32 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang]);
 
-  const allVisible = TOGGLE_GROUPS.every((g) => visibility[g.id]);
+  // An index loaded with the P/E pane open would leave an empty pane behind a
+  // switch that is no longer in the list, so the stock-only layers come off
+  // as the symbol changes kind.
+  // F/K paneli açıkken endeks yüklenirse, listede artık olmayan bir düğmenin
+  // arkasında boş bir panel kalırdı; bu yüzden sembolün türü değişince yalnız
+  // hisseye ait katmanlar iniyor.
+  useEffect(() => {
+    if (!isIndex || !STOCK_ONLY_GROUPS.some((id) => visibility[id])) return;
+    applyVisibility(visibilityFor(symbolKind, visibility));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isIndex, visibility]);
+
+  // The statements view has nothing to show for an index, so loading one
+  // while it is open comes back to the chart.
+  // Mali tablolar görünümünün endekste gösterecek bir şeyi yok; o açıkken
+  // endeks yüklenirse grafiğe dönülüyor.
+  useEffect(() => {
+    if (isIndex && view === 'fundamentals') setView('chart');
+  }, [isIndex, view]);
+
+  const allVisible = availableGroups.every((g) => visibility[g.id]);
   // Notes for the sets the reader turned on; with everything on, nothing was chosen.
   // Okurun açtığı düzenlerin notları; her şey açıkken bir seçim yapılmamış olur.
-  const activePresets = allVisible ? [] : PRESETS.filter((preset) => preset.groups.every((id) => visibility[id]));
+  const activePresets = allVisible
+    ? []
+    : availablePresets.filter((preset) => preset.groups.every((id) => visibility[id]));
   const canExtend = selectedDrawing && typeof selectedDrawing.getExtend === 'function';
   const activeSidebarTab = SIDEBAR_TABS.find((tab) => tab.id === sidebarTab) ?? SIDEBAR_TABS[0];
   const visibleGroups = TOGGLE_GROUPS.filter((g) => visibility[g.id]);
@@ -2341,6 +2422,23 @@ function App() {
           }
           .stc-mono {
             font-family: 'JetBrains Mono', ui-monospace, monospace;
+          }
+          .stc-kind-tag {
+            margin-left: auto;
+            flex-shrink: 0;
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            border: 1px solid var(--btn-border);
+            border-radius: 2px;
+            padding: 0 4px;
+          }
+          .stc-index-note {
+            margin: 0;
+            font-size: 12.5px;
+            line-height: 1.6;
+            color: var(--text-dim);
           }
           .stc-muted {
             margin: 0;
@@ -3222,6 +3320,8 @@ function App() {
             <button
               className={view === 'fundamentals' ? 'is-active' : ''}
               aria-pressed={view === 'fundamentals'}
+              disabled={isIndex}
+              title={isIndex ? str.indexNoStatements : undefined}
               onClick={() => setView('fundamentals')}
             >
               {str.viewFundamentals}
@@ -3476,9 +3576,10 @@ function App() {
             </div>
 
             <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'indicators'}>
+              {isIndex && <p className="stc-index-note">{str.indexLayersNote}</p>}
               <div className="stc-section-title">{str.sectionPresets}</div>
               <div className="stc-preset-grid">
-                {PRESETS.map((preset) => (
+                {availablePresets.map((preset) => (
                   <button
                     key={preset.id}
                     className={`stc-preset ${preset.groups.every((id) => visibility[id]) ? 'is-active' : ''}`}
@@ -3559,14 +3660,14 @@ function App() {
                 aria-expanded={allToggles}
               >
                 <span className={`stc-fold-chevron ${allToggles ? 'is-open' : ''}`} aria-hidden="true" />
-                {str.allIndicators(TOGGLE_GROUPS.length)}
+                {str.allIndicators(availableGroups.length)}
               </button>
               {allToggles && (
                 <div className="stc-fold-body">
                   <button className="stc-toggle-all" onClick={handleToggleAll}>
                     {allVisible ? str.hideAll : str.showAll}
                   </button>
-                  {PANEL_SECTIONS.map((section) => (
+                  {panelSections.map((section) => (
                     <div key={section.titleKey}>
                       <div className="stc-section-title">{str[section.titleKey]}</div>
                       <div className="stc-checkbox-grid">
@@ -3598,9 +3699,20 @@ function App() {
             </div>
 
             <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'context'}>
-              <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />
-              <div className="stc-panel-rule" />
-              <ReactionProfileWidget symbol={symbol} />
+              {/* On an index the first two read a company's record, which
+                  there is none of; the sector map is the market itself and
+                  stays. */}
+              {/* Endekste ilk ikisi şirketin siciline bakıyor, o da yok;
+                  sektör haritası piyasanın kendisi, yerinde kalıyor. */}
+              {isIndex ? (
+                <p className="stc-index-note">{str.indexContextEmpty}</p>
+              ) : (
+                <>
+                  <MoveReasonsWidget move={moveDetail} onClose={() => setMoveDetail(null)} />
+                  <div className="stc-panel-rule" />
+                  <ReactionProfileWidget symbol={symbol} />
+                </>
+              )}
               <div className="stc-panel-rule" />
               <SectorHeatWidget symbol={symbol} onSelectSymbol={handleSelectScanSymbol} />
             </div>
@@ -3646,7 +3758,10 @@ function App() {
         {view === 'portfolio' && <PortfolioView />}
 
         <footer className="stc-statusbar">
-          <span>{symbol} · 1D · BIST</span>
+          <span>
+            {symbol}
+            {isIndex && symbolName ? ` · ${symbolName}` : ''} · 1D · BIST
+          </span>
           {updatedAt && <span>{str.updated(formatClock(updatedAt))}</span>}
           <div style={{ flexGrow: 1 }} />
           {/* The shortcut line was permanent furniture for something read

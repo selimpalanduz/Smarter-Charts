@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 
 import borsapy as bp
 
+import indices
 import kap
 import price_cache
 from data_provider import get_quarterly_net_income
@@ -73,6 +74,9 @@ def get_earnings(symbol: str) -> dict:
     isteğinden sonra çağırıyor (bkz. sr_zones.get_sr_zones).
     """
     symbol = symbol.upper()
+    if indices.is_index(symbol):
+        return {"events": [], "next": None}
+
     now = time.time()
     cached = _cache.get(symbol)
     if cached and (now - cached[0]) < CACHE_TTL:

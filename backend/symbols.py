@@ -17,6 +17,7 @@ from pathlib import Path
 
 import httpx
 
+import indices
 from volume_scanner import _load_tickers
 
 SCANNER_URL = "https://scanner.tradingview.com/turkey/scan"
@@ -64,7 +65,13 @@ def _build() -> tuple[list[dict], bool]:
     # Most traded first, so the list reads usefully before anything is typed.
     # En çok işlem görenler başta olsun ki liste bir şey yazılmadan da işe yarasın.
     out.sort(key=lambda r: (r["rank"], r["symbol"]))
-    return [{"symbol": r["symbol"], "name": r["name"]} for r in out], bool(info)
+    return [{"symbol": r["symbol"], "name": r["name"], "kind": "stock"} for r in out], bool(info)
+
+
+def _as_stock(row: dict) -> dict:
+    # Files written before the indices arrived carry no "kind".
+    # Endekslerden önce yazılmış dosyalarda "kind" yok.
+    return {"symbol": row["symbol"], "name": row["name"], "kind": "stock"}
 
 
 def _read_cache() -> tuple[float, list[dict]] | None:
@@ -73,7 +80,7 @@ def _read_cache() -> tuple[float, list[dict]] | None:
     try:
         with open(CACHE_PATH, "r", encoding="utf-8") as f:
             payload = json.load(f)
-        return float(payload["fetched_at"]), payload["symbols"]
+        return float(payload["fetched_at"]), [_as_stock(r) for r in payload["symbols"]]
     except Exception:
         return None
 
@@ -85,6 +92,17 @@ def _write_cache(symbols: list[dict]) -> None:
 
 
 def get_symbols() -> list[dict]:
+    """
+    The indices first, then the stocks. Only the stock half is cached — it is
+    the half that costs a screener request; the indices are a constant.
+
+    Önce endeksler, sonra hisseler. Önbelleğe yalnız hisse tarafı giriyor —
+    screener isteğine mal olan taraf o; endeksler sabit.
+    """
+    return indices.entries() + _get_stocks()
+
+
+def _get_stocks() -> list[dict]:
     global _memory
     now = time.time()
 

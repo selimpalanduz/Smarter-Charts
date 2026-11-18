@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { API_BASE } from './config.js';
 import { useT } from './i18n.js';
+import { useSymbols } from './symbolList.js';
 
 const RECENTS_KEY = 'stc.recentSymbols';
 const RECENTS_MAX = 8;
@@ -46,7 +46,7 @@ function score(entry, query) {
 
 function SymbolPicker({ symbol, onSelect, inputRef }) {
   const [query, setQuery] = useState(symbol);
-  const [all, setAll] = useState([]);
+  const all = useSymbols();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [recents, setRecents] = useState(readRecents);
@@ -62,24 +62,6 @@ function SymbolPicker({ symbol, onSelect, inputRef }) {
       return next;
     });
   }, [symbol]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/symbols`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (!cancelled) setAll(data);
-      } catch {
-        // Without the list the field still works as a plain text input.
-        // Liste gelmezse alan düz metin girişi olarak çalışmaya devam eder.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     function onPointerDown(e) {
@@ -244,6 +226,15 @@ function SymbolPicker({ symbol, onSelect, inputRef }) {
                     >
                       {row.name === row.symbol ? '' : row.name}
                     </span>
+                    {/* An index is a different kind of thing from the rest of
+                        the list — no statements behind it — so the row says
+                        so before it is opened. */}
+                    {/* Endeks listedeki diğerlerinden başka türde bir şey —
+                        arkasında mali tablo yok — bu yüzden satır bunu
+                        açılmadan önce söylüyor. */}
+                    {row.kind === 'index' && (
+                      <span className="stc-kind-tag">{t.indexTag}</span>
+                    )}
                   </li>
                 ))}
               </ul>

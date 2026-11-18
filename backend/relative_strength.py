@@ -58,6 +58,8 @@ from statistics import median
 
 import httpx
 
+import indices
+
 SCANNER_URL = "https://scanner.tradingview.com/turkey/scan"
 INDEX_SYMBOL = "XU100"
 INDEX_TICKER = f"BIST:{INDEX_SYMBOL}"
@@ -143,6 +145,9 @@ def _snapshot() -> dict:
 def relative_strength(symbol: str) -> dict:
     """The symbol's return against its sector's median and against XU100, by period."""
     symbol = symbol.upper()
+    if indices.is_index(symbol):
+        return {"symbol": symbol, "supported": False, "reason": "index"}
+
     snapshot = _snapshot()
     own = snapshot["symbols"].get(symbol)
     if not own:

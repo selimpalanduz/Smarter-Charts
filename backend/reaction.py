@@ -89,6 +89,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import binomtest
 
+import indices
 import kap
 import price_cache
 from moves import INDEX_SYMBOL, MIN_MOVE_PCT, VOL_MULTIPLE, VOL_WINDOW
@@ -226,6 +227,9 @@ def frames(symbol: str, start: str, end: str) -> tuple[pd.DataFrame, np.ndarray]
 def reaction_profile(symbol: str) -> dict:
     """Whether the symbol's sharp moves and earnings reactions came back or ran on."""
     symbol = symbol.upper()
+    if indices.is_index(symbol):
+        return {"symbol": symbol, "supported": False, "reason": "index"}
+
     now = time.time()
     cached = _cache.get(symbol)
     if cached and now - cached[0] < CACHE_TTL:
