@@ -31,7 +31,7 @@ import NotesPanel from './NotesPanel.jsx';
 import { API_BASE } from './config.js';
 import { STRINGS, LangContext, useT } from './i18n.js';
 import { useSymbolKind, useSymbolName } from './symbolList.js';
-import { THEME, setPalette, colors } from './theme.js';
+import { THEME, setPalette, colors, DRAWING_COLORS } from './theme.js';
 import {
   LogoMark,
   CursorIcon,
@@ -1144,6 +1144,14 @@ function App() {
   const [allToggles, setAllToggles] = useState(false);
   const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
   const [barMenuOpen, setBarMenuOpen] = useState(false);
+  // The colour new shapes are drawn in. null means the theme's own drawing
+  // colour, which is what every shape used before there was a choice.
+  // Yeni şekillerin çizileceği renk. null, temanın kendi çizim rengi demek;
+  // seçenek yokken her şeklin kullandığı şey oydu.
+  const [drawColor, setDrawColor] = useState(null);
+  const drawColorRef = useRef(null);
+  const [colorMenuOpen, setColorMenuOpen] = useState(false);
+  const colorMenuRef = useRef(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const barMenuRef = useRef(null);
   const shortcutsRef = useRef(null);
@@ -1214,6 +1222,16 @@ function App() {
   const [selectedDrawing, setSelectedDrawing] = useState(null);
   const selectedDrawingRef = useRef(null);
   const [selectedExtend, setSelectedExtend] = useState({ left: false, right: false });
+  // The drag in progress, the last crosshair position, and whether the pointer
+  // actually travelled -- a press that never moved is still a click, and has
+  // to reach the click handler untouched.
+  // Süren sürükleme, son nişangâh konumu ve işaretçinin gerçekten yol alıp
+  // almadığı -- hiç kıpırdamamış bir basış hâlâ tıklamadır ve tıklama
+  // işleyicisine dokunulmadan ulaşmalı.
+  const dragRef = useRef(null);
+  const dragMovedRef = useRef(false);
+  const [grabCursor, setGrabCursor] = useState(null);
+  const grabCursorRef = useRef(null);
 
   const t = darkMode ? THEME.dark : THEME.light;
 
@@ -1259,14 +1277,35 @@ function App() {
   // A pointer press outside an open popover closes it.
   // Açık bir açılır kutunun dışına basmak onu kapatıyor.
   useEffect(() => {
-    if (!barMenuOpen && !shortcutsOpen) return undefined;
+    if (!barMenuOpen && !shortcutsOpen && !colorMenuOpen) return undefined;
     function handlePointerDown(e) {
       if (barMenuOpen && !barMenuRef.current?.contains(e.target)) setBarMenuOpen(false);
       if (shortcutsOpen && !shortcutsRef.current?.contains(e.target)) setShortcutsOpen(false);
+      if (colorMenuOpen && !colorMenuRef.current?.contains(e.target)) setColorMenuOpen(false);
     }
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [barMenuOpen, shortcutsOpen]);
+  }, [barMenuOpen, shortcutsOpen, colorMenuOpen]);
+
+  // Press to grab, release to drop. The press goes on the chart itself, the
+  // release on the window: a drag that ends with the pointer off the chart
+  // still has to end.
+  // Tutmak için bas, bırakmak için kaldır. Basış grafiğin üstünde, kaldırma
+  // pencerede: işaretçi grafiğin dışındayken biten bir sürükleme de bitmeli.
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el) return undefined;
+    el.addEventListener('pointerdown', handleDragStart);
+    window.addEventListener('pointermove', handleDragMove);
+    window.addEventListener('pointerup', handleDragEnd);
+    window.addEventListener('pointercancel', handleDragEnd);
+    return () => {
+      el.removeEventListener('pointerdown', handleDragStart);
+      window.removeEventListener('pointermove', handleDragMove);
+      window.removeEventListener('pointerup', handleDragEnd);
+      window.removeEventListener('pointercancel', handleDragEnd);
+    };
+  }, []);
 
   // Clicking something on the chart opens the panel on the tab that explains
   // it, whether the panel was open or not.
@@ -1515,6 +1554,175 @@ function App() {
     setSelectedExtend({ left: false, right: false });
   }
 
+  // What the pointer would grab here: a handle of the selected shape first,
+  // then any shape's body. Topmost wins, which is the order they were drawn in
+  // reversed, the same rule selection already uses.
+  // İşaretçinin burada neyi tutacağı: önce seçili şeklin tutamağı, sonra
+  // herhangi bir şeklin gövdesi. En üstteki kazanıyor, yani çizilme sırasının
+  // tersi; seçimin zaten kullandığı kural.
+  function findGrab(x, y) {
+    const shapes = [...drawingsRef.current].reverse();
+    for (const shape of shapes) {
+      const which = shape.hitHandle?.(x, y);
+      if (which) return { target: shape, kind: 'handle', which };
+    }
+    const body = shapes.find((shape) => shape.hitTest(x, y));
+    return body ? { target: body, kind: 'body' } : null;
+  }
+
+  function pointAt(x, y) {
+    const chart = chartRef.current;
+    const series = seriesMapRef.current.candle;
+    if (!chart || !series) return null;
+    const time = chart.timeScale().coordinateToTime(x);
+    const price = series.coordinateToPrice(y);
+    return time === null || price === null ? null : { time, price };
+  }
+
+  // A body drag moves in pixels and converts back once per endpoint, so the
+  // shape keeps its angle and length instead of drifting as each end lands on
+  // its own bar. Past the last bar there is no time to convert to, and the
+  // shape simply stops rather than snapping somewhere.
+  // Gövde sürüklemesi piksel üstünde yürüyüp uç başına bir kez geri çeviriyor;
+  // böylece şekil, her uç kendi barına otururken kaymak yerine açısını ve
+  // boyunu koruyor. Son barın ötesinde çevrilecek bir zaman yok, şekil bir
+  // yere sıçramak yerine orada duruyor.
+  function applyDrag(point) {
+    const drag = dragRef.current;
+    const series = seriesMapRef.current.candle;
+    if (!drag || !point || !series) return;
+
+    if (Math.abs(point.x - drag.startX) + Math.abs(point.y - drag.startY) > 2) {
+      dragMovedRef.current = true;
+    }
+
+    if (drag.kind === 'handle') {
+      const moved = pointAt(point.x, point.y);
+      if (moved) drag.target.movePoint(drag.which, moved);
+      return;
+    }
+
+    const dx = point.x - drag.startX;
+    const dy = point.y - drag.startY;
+
+    if (typeof drag.target.setPrice === 'function') {
+      const price = series.coordinateToPrice(drag.origin.y1 + dy);
+      if (price !== null) drag.target.setPrice(price);
+      return;
+    }
+
+    const p1 = pointAt(drag.origin.x1 + dx, drag.origin.y1 + dy);
+    const p2 = pointAt(drag.origin.x2 + dx, drag.origin.y2 + dy);
+    if (p1 && p2) drag.target.setPoints(p1, p2);
+  }
+
+  // The cursor goes through React rather than being written onto the element:
+  // the container's style is rendered, so an imperative write is undone by the
+  // next render. It only changes when the pointer crosses a shape's edge, so
+  // the state does not churn.
+  // İmleç elemana yazılmak yerine React'ten geçiyor: kapsayıcının stili render
+  // ediliyor, yani elle yazılan değer bir sonraki render'da siliniyor. Yalnız
+  // işaretçi bir şeklin kenarını geçerken değiştiği için state de çalkalanmıyor.
+  function setGrabCursorIfChanged(next) {
+    if (grabCursorRef.current === next) return;
+    grabCursorRef.current = next;
+    setGrabCursor(next);
+  }
+
+  function handleDragHover(param) {
+    if (dragRef.current) return;
+    if (activeToolRef.current || !param.point) {
+      setGrabCursorIfChanged(null);
+      return;
+    }
+    const grab = findGrab(param.point.x, param.point.y);
+    setGrabCursorIfChanged(grab ? (grab.kind === 'handle' ? 'pointer' : 'move') : null);
+  }
+
+  // Where a pointer event lands inside the drawing pane. It is measured from
+  // the pane's own canvas -- the widest one in the chart's first row -- rather
+  // than taken from the last crosshair report, which is a reading from before
+  // the press and can be from somewhere else entirely. Once a press lands the
+  // chart stops reporting the crosshair anyway, since it is holding the
+  // gesture itself.
+  // Bir işaretçi olayının çizim panosunda nereye düştüğü. Panonun kendi
+  // tuvalinden ölçülüyor -- grafiğin ilk satırındaki en geniş tuval -- son
+  // nişangâh bildiriminden alınmıyor; o, basıştan önceki bir okuma ve bambaşka
+  // bir yerden olabilir. Zaten basış olunca grafik nişangâhı bildirmeyi
+  // bırakıyor, hareketi kendi tutuyor.
+  function panePointOf(e) {
+    const row = chartContainerRef.current?.querySelector('table tr');
+    if (!row) return null;
+    let canvas = null;
+    row.querySelectorAll('canvas').forEach((c) => {
+      if (!canvas || c.clientWidth > canvas.clientWidth) canvas = c;
+    });
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    return x < 0 || y < 0 || x > rect.width || y > rect.height ? null : { x, y, rect };
+  }
+
+  function handleDragMove(e) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    applyDrag({ x: e.clientX - drag.offsetX, y: e.clientY - drag.offsetY });
+  }
+
+  function handleDragStart(e) {
+    if (e.button !== 0 || activeToolRef.current) return;
+    const point = panePointOf(e);
+    if (!point) return;
+
+    const grab = findGrab(point.x, point.y);
+    if (!grab) return;
+
+    // Grabbing an unselected shape selects it first, so its handles are there
+    // to be grabbed on the next press rather than after a separate click.
+    // Seçili olmayan bir şekli tutmak önce onu seçiyor; böylece tutamakları
+    // ayrı bir tıklamadan sonra değil, bir sonraki basışta tutulmaya hazır.
+    if (selectedDrawingRef.current !== grab.target) handleSelectDrawing(point.x, point.y);
+
+    const origin = grab.target.handleCoords?.();
+    if (!origin) return;
+
+    dragRef.current = {
+      ...grab,
+      startX: point.x,
+      startY: point.y,
+      origin,
+      offsetX: point.rect.left,
+      offsetY: point.rect.top,
+    };
+    dragMovedRef.current = false;
+    // The chart would pan under the shape otherwise, and the two would fight.
+    // Yoksa grafik şeklin altından kayar, ikisi birbiriyle boğuşurdu.
+    chartRef.current?.applyOptions({ handleScroll: false, handleScale: false });
+    setGrabCursorIfChanged('grabbing');
+    e.preventDefault();
+  }
+
+  function handleDragEnd() {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
+    setGrabCursorIfChanged(null);
+  }
+
+  // Picking a colour sets it for what comes next, and repaints whatever is
+  // selected right now -- the swatch is both a setting and an edit, which is
+  // how every other chart tool behaves.
+  // Renk seçmek bundan sonrası için ayarı kuruyor ve o an seçili olanı
+  // yeniden boyuyor -- kutucuk hem bir ayar hem bir düzenleme, her grafik
+  // aracının davranışı bu.
+  function handlePickColor(color) {
+    drawColorRef.current = color;
+    setDrawColor(color);
+    setColorMenuOpen(false);
+    selectedDrawingRef.current?.setColor?.(color);
+  }
+
   function handleToggleExtend(side) {
     const selected = selectedDrawingRef.current;
     if (!selected || typeof selected.getExtend !== 'function') return;
@@ -1529,6 +1737,14 @@ function App() {
   }
 
   function handleChartClick(param) {
+    // The pointerup that ends a drag arrives here as a click; it would
+    // reselect, or open a move's panel, neither of which was asked for.
+    // Sürüklemeyi bitiren pointerup buraya tıklama olarak geliyor; yeniden
+    // seçerdi ya da bir hareketin panelini açardı, ikisi de istenmedi.
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false;
+      return;
+    }
     const tool = activeToolRef.current;
     const series = seriesMapRef.current.candle;
     const chart = chartRef.current;
@@ -1553,6 +1769,7 @@ function App() {
 
     if (tool === 'horizontal') {
       const primitive = new HorizontalLinePrimitive(price);
+      primitive.setColor(drawColorRef.current);
       series.attachPrimitive(primitive);
       drawingsRef.current.push(primitive);
       setActiveTool(null);
@@ -1580,6 +1797,7 @@ function App() {
     }
 
     const primitive = new TWO_POINT_PRIMITIVES[tool](p1, p2);
+    primitive.setColor(drawColorRef.current);
     series.attachPrimitive(primitive);
     drawingsRef.current.push(primitive);
     setActiveTool(null);
@@ -1642,6 +1860,11 @@ function App() {
       const PrimitiveClass = TWO_POINT_PRIMITIVES[tool];
       const extra = tool === 'pattern' ? patternHighlight() : {};
       const preview = new PrimitiveClass(p1, p2, { preview: true, ...extra });
+      // The pattern tool keeps its own colours: they say "this is the span
+      // being searched", not "this is a drawing of yours".
+      // Formasyon aracı kendi renklerini koruyor: "aranan aralık burası"
+      // diyorlar, "bu senin çizimin" değil.
+      if (tool !== 'pattern') preview.setColor(drawColorRef.current);
       series.attachPrimitive(preview);
       previewPrimitiveRef.current = preview;
     } else {
@@ -1871,6 +2094,7 @@ function App() {
         });
 
         chart.subscribeClick(handleChartClick);
+        chart.subscribeCrosshairMove(handleDragHover);
 
         // The chart is already up from the cache; the backend is fetching the
         // newest candles in the background, so ask once more for them.
@@ -2094,6 +2318,7 @@ function App() {
           '--grid-color': t.gridColor,
           '--separator-hover': t.separatorHover,
           '--crosshair': t.crosshair,
+          '--drawing': t.drawing,
         }}
       >
         <style>{`
@@ -2946,6 +3171,57 @@ function App() {
             background: transparent;
             color: var(--text-dim);
           }
+          /* The swatch flies out beside the rail rather than below it: the
+             rail is 48px wide and a row of circles does not fit in it. */
+          /* Kutucuklar şeridin altına değil yanına açılıyor: şerit 48 piksel
+             ve bir sıra çember oraya sığmıyor. */
+          .stc-rail-color {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .stc-swatch-dot {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 1px solid var(--panel-border);
+          }
+          .stc-swatches {
+            position: absolute;
+            left: calc(100% + 8px);
+            top: -6px;
+            z-index: 40;
+            display: flex;
+            gap: 6px;
+            padding: 7px 8px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 4px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+          }
+          .stc-swatch {
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+          }
+          .stc-swatch:hover {
+            border-color: var(--separator-hover);
+          }
+          .stc-swatch.is-active {
+            border-color: var(--accent);
+          }
+          .stc-swatch:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
+          }
           .stc-rail-divider {
             width: 20px;
             height: 1px;
@@ -3438,6 +3714,41 @@ function App() {
                 </RailButton>
               );
             })}
+            <div className="stc-rail-color" ref={colorMenuRef}>
+              <button
+                className={`stc-rail-btn ${colorMenuOpen ? 'is-active' : ''}`}
+                onClick={() => setColorMenuOpen((open) => !open)}
+                aria-expanded={colorMenuOpen}
+                aria-label={str.drawColor}
+                title={str.drawColor}
+              >
+                <span
+                  className="stc-swatch-dot"
+                  style={{ background: drawColor ?? 'var(--drawing)' }}
+                  aria-hidden="true"
+                />
+              </button>
+              {colorMenuOpen && (
+                <div className="stc-swatches" role="group" aria-label={str.drawColor}>
+                  {DRAWING_COLORS.map((color) => (
+                    <button
+                      key={color ?? 'default'}
+                      className={`stc-swatch ${drawColor === color ? 'is-active' : ''}`}
+                      aria-pressed={drawColor === color}
+                      aria-label={str.colorNames[color] ?? str.colorDefault}
+                      title={str.colorNames[color] ?? str.colorDefault}
+                      onClick={() => handlePickColor(color)}
+                    >
+                      <span
+                        className="stc-swatch-dot"
+                        style={{ background: color ?? 'var(--drawing)' }}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="stc-rail-divider" />
             <RailButton
               label={str.extendLeft}
@@ -3466,7 +3777,7 @@ function App() {
           <main style={{ flexGrow: 1, position: 'relative', minWidth: 0 }}>
             <div
               ref={chartContainerRef}
-              style={{ position: 'absolute', inset: 0, cursor: activeTool ? 'crosshair' : 'default' }}
+              style={{ position: 'absolute', inset: 0, cursor: activeTool ? 'crosshair' : grabCursor ?? 'default' }}
             />
 
             {/* The price sits on the chart it is drawn from, and is still the

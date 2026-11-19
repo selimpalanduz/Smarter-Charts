@@ -80,6 +80,16 @@ export const THEME = {
 // hem koyu hem açık zeminde doğrulandı, tek set ikisine de yetiyor.
 export const SERIES = ['#c48622', '#3f86bd', '#36a776'];
 
+// What a drawing can be coloured. `null` is the first swatch and means "no
+// colour of its own": the shape keeps following the theme's drawing colour,
+// which is amber and differs between dark and light. The rest are fixed hexes
+// that hold up on both surfaces, picked on the same footing as SERIES above.
+// Bir çizimin alabileceği renkler. `null` ilk kutucuk ve "kendi rengi yok"
+// demek: şekil temanın çizim rengini izlemeyi sürdürüyor, o da kehribar ve
+// koyu ile açık arasında değişiyor. Gerisi iki zeminde de tutan sabit hex'ler,
+// yukarıdaki SERIES ile aynı ölçüte göre seçildi.
+export const DRAWING_COLORS = [null, '#3f86bd', '#36a776', '#d1495b', '#9b6bd1', '#30a8a8'];
+
 // Canvas-drawn chart parts can't read CSS variables, so they read the active palette from here.
 // Canvas'a çizilen grafik parçaları CSS değişkenlerini okuyamaz; aktif paleti buradan okur.
 let active = THEME.dark;

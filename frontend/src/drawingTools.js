@@ -27,10 +27,24 @@ class UnderlayPaneView extends BasePaneView {
   }
 }
 
+// All three shapes draw their endpoints with this, so the size is set once.
+// Üç şekil de uçlarını bununla çiziyor, boyut bir kez ayarlanıyor.
+const HANDLE_RADIUS = 6;
+
+// A rectangle's fill is its own colour, thinned. Written out rather than
+// relying on an 8-digit hex, which older canvas implementations read as
+// opaque.
+// Dikdörtgenin dolgusu kendi renginin inceltilmişi. 8 haneli hex'e
+// güvenmek yerine açık yazıldı; eski canvas uygulamaları onu opak okuyor.
+function withAlpha(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
 function drawHandle(ctx, x, y, color) {
   ctx.save();
   ctx.beginPath();
-  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.arc(x, y, HANDLE_RADIUS, 0, Math.PI * 2);
   ctx.fillStyle = colors().chartBg;
   ctx.fill();
   ctx.lineWidth = 2;
@@ -49,6 +63,72 @@ function distanceToSegment(px, py, x1, y1, x2, y2) {
   const closestY = y1 + t * dy;
   return Math.hypot(px - closestX, py - closestY);
 }
+
+// A handle is grabbed from a little further out than the circle it draws, so
+// it can be caught without landing exactly on the dot.
+// Tutamak, çizdiği çemberden biraz daha geniş bir alandan yakalanıyor; böylece
+// tam noktanın üstüne basmadan tutulabiliyor.
+const HANDLE_GRAB = HANDLE_RADIUS + 5;
+
+// The three two-point shapes move the same way, so they share one set of
+// methods rather than carrying three copies. A shape exposes its endpoints
+// only while selected: an unselected line is dragged by its body, and handles
+// that cannot be seen should not be grabbable either.
+// Üç iki-noktalı şekil aynı şekilde taşınıyor, bu yüzden üç kopya taşımak
+// yerine tek bir metot kümesini paylaşıyorlar. Şekil uçlarını yalnız seçiliyken
+// açıyor: seçili olmayan çizgi gövdesinden sürükleniyor ve görünmeyen tutamak
+// tutulabilir de olmamalı.
+const twoPointDrag = {
+  hitHandle(x, y) {
+    if (!this._selected) return null;
+    const c = this._coords();
+    if (!c) return null;
+    if (Math.hypot(x - c.x1, y - c.y1) <= HANDLE_GRAB) return 'p1';
+    if (Math.hypot(x - c.x2, y - c.y2) <= HANDLE_GRAB) return 'p2';
+    return null;
+  },
+  getPoints() {
+    return { p1: { ...this._p1 }, p2: { ...this._p2 } };
+  },
+  setPoints(p1, p2) {
+    this._p1 = p1;
+    this._p2 = p2;
+    this._requestUpdate?.();
+  },
+  movePoint(which, point) {
+    if (which === 'p1') this._p1 = point;
+    else this._p2 = point;
+    this._requestUpdate?.();
+  },
+  // One setter for all three, because each shape reads a different key: the
+  // line and the ladder draw with `color`, the rectangle with `borderColor`
+  // and `fillColor`. Writing all of them keeps the mixin from needing an
+  // override, which Object.assign would overwrite anyway. `null` clears them,
+  // and the shape falls back to the theme's drawing colour.
+  // Üçü için tek setter, çünkü her şekil başka bir anahtarı okuyor: çizgi ve
+  // merdiven `color` ile, dikdörtgen `borderColor` ve `fillColor` ile
+  // çiziyor. Hepsini yazmak, mixin'in bir override'a ihtiyaç duymasını
+  // engelliyor; zaten Object.assign onu ezerdi. `null` hepsini siliyor ve
+  // şekil temanın çizim rengine düşüyor.
+  setColor(color) {
+    this._options.color = color ?? undefined;
+    this._options.borderColor = color ?? undefined;
+    this._options.fillColor = color ? withAlpha(color, 0.12) : undefined;
+    this._requestUpdate?.();
+  },
+  getColor() {
+    return this._options.color ?? null;
+  },
+  // Where each endpoint sits on screen right now. A body drag works in pixels
+  // and converts back once, so the shape keeps its shape instead of being
+  // rebuilt from two independently rounded times.
+  // Her ucun şu an ekranda nerede olduğu. Gövde sürüklemesi piksel üstünde
+  // çalışıp sonunda bir kez geri çeviriyor; böylece şekil, ayrı ayrı
+  // yuvarlanmış iki zamandan yeniden kurulmak yerine biçimini koruyor.
+  handleCoords() {
+    return this._coords();
+  },
+};
 
 export class TrendLinePrimitive {
   constructor(p1, p2, options = {}) {
@@ -457,6 +537,32 @@ export class HorizontalLinePrimitive {
     if (lineY === null) return false;
     return Math.abs(y - lineY) <= 6;
   }
+  // It spans the whole width, so there is no end to grab and nothing to drag
+  // sideways; the body carries it, in price only.
+  // Tüm genişliği kapladığı için tutulacak bir uç ve yana sürüklenecek bir şey
+  // yok; gövdesi taşıyor, yalnız fiyatta.
+  hitHandle() {
+    return null;
+  }
+  setColor(color) {
+    this._options.color = color ?? undefined;
+    this._requestUpdate?.();
+  }
+  getColor() {
+    return this._options.color ?? null;
+  }
+  getPrice() {
+    return this._price;
+  }
+  setPrice(price) {
+    this._price = price;
+    this._requestUpdate?.();
+  }
+  handleCoords() {
+    if (!this._series) return null;
+    const y = this._series.priceToCoordinate(this._price);
+    return y === null ? null : { x1: 0, y1: y, x2: 0, y2: y };
+  }
   _draw(ctx, mediaSize) {
     if (!this._chart || !this._series) return;
     const y = this._series.priceToCoordinate(this._price);
@@ -616,3 +722,7 @@ export class CostProfilePrimitive {
     ctx.restore();
   }
 }
+
+Object.assign(TrendLinePrimitive.prototype, twoPointDrag);
+Object.assign(FibonacciPrimitive.prototype, twoPointDrag);
+Object.assign(RectanglePrimitive.prototype, twoPointDrag);
