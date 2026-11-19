@@ -25,6 +25,7 @@ import MoveReasonsWidget from './MoveReasonsWidget.jsx';
 import ReactionProfileWidget from './ReactionProfileWidget.jsx';
 import AnchorsWidget from './AnchorsWidget.jsx';
 import AnchorScanWidget from './AnchorScanWidget.jsx';
+import SqueezeScanWidget from './SqueezeScanWidget.jsx';
 import SectorHeatWidget from './SectorHeatWidget.jsx';
 import NotesPanel from './NotesPanel.jsx';
 import { API_BASE } from './config.js';
@@ -3726,6 +3727,8 @@ function App() {
               <AnchorsWidget data={anchorsData} />
               <div className="stc-panel-rule" />
               <AnchorScanWidget onSelectSymbol={handleSelectScanSymbol} />
+              <div className="stc-panel-rule" />
+              <SqueezeScanWidget onSelectSymbol={handleSelectScanSymbol} />
             </div>
 
             <div className="stc-tabpanel" role="tabpanel" hidden={sidebarTab !== 'context'}>

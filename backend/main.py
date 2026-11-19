@@ -20,6 +20,7 @@ from portfolio.router import router as portfolio_router
 from notes.router import router as notes_router
 import anchor_scanner
 import cache_warmer
+import squeeze
 
 app = FastAPI()
 
@@ -75,6 +76,26 @@ def get_volume_scan(refresh: bool = False):
 def get_anchor_scan(start: bool = False):
     try:
         return anchor_scanner.get_scan(start=start)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/scan/squeeze")
+def get_squeeze_scan(start: bool = False, mode: str = "percentile", percentile: float = 0.25):
+    try:
+        return squeeze.get_scan(start=start, mode=mode, percentile=percentile)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/squeeze/{symbol}")
+def get_squeeze_status(symbol: str, mode: str = "percentile", percentile: float = 0.25):
+    try:
+        return squeeze.status_for(symbol.upper(), mode=mode, percentile=percentile)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
