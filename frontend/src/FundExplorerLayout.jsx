@@ -3,7 +3,7 @@ import { SERIES } from './theme.js';
 import { useT } from './i18n.js';
 import { summaryUrl } from './fundApi.js';
 import { BarChart, LineChart, Sparkline } from './FundCharts.jsx';
-import { KIND_NOTES, RELATED, ROW_NOTES } from './fundNotes.js';
+import { changeClass, deltaColor, KIND_NOTES, RELATED, ROW_NOTES, signClass } from './fundNotes.js';
 import { change, FLAT_SCALE, formatCell, indexed, num, overWindow, rowScale } from './fundFormat.js';
 
 const BASES = [
@@ -151,7 +151,7 @@ export default function FundExplorerLayout({ model, symbol }) {
               <div className="stc-fund-stat-label">{str.fundDeltaHead[period]}</div>
               <b
                 className="stc-fund-stat"
-                style={{ color: delta ? (delta.up ? 'var(--up)' : 'var(--down)') : 'var(--text-dim)' }}
+                style={{ color: delta ? deltaColor(delta.up, row.key) : 'var(--text-dim)' }}
               >
                 {delta ? delta.text : '—'}
               </b>
@@ -161,7 +161,7 @@ export default function FundExplorerLayout({ model, symbol }) {
               <b
                 className="stc-fund-stat"
                 style={{
-                  color: window && window.up != null ? (window.up ? 'var(--up)' : 'var(--down)') : 'var(--text-dim)',
+                  color: window ? deltaColor(window.up, row.key) : 'var(--text-dim)',
                 }}
               >
                 {window ? window.text : '—'}
@@ -208,6 +208,7 @@ export default function FundExplorerLayout({ model, symbol }) {
               width={640}
               height={206}
               format={format}
+              rowKey={row.key}
               label={`${labelOf(row, str)} — ${columns[0]} → ${columns[columns.length - 1]}`}
             />
           )}
@@ -228,7 +229,7 @@ export default function FundExplorerLayout({ model, symbol }) {
                 <tr>
                   <th scope="row">{str.fundLevelRow}</th>
                   {row.values.map((value, i) => (
-                    <td key={columns[i]} className={value != null && value < 0 ? 'is-neg' : ''}>
+                    <td key={columns[i]} className={signClass(value, row.key)}>
                       {formatCell(value, row.unit, scale, str.locale)}
                     </td>
                   ))}
@@ -246,7 +247,7 @@ export default function FundExplorerLayout({ model, symbol }) {
                     }
                     const d = unitFree ? value - before : ((value - before) / Math.abs(before)) * 100;
                     return (
-                      <td key={columns[i]} className={d >= 0 ? 'is-up' : 'is-neg'}>
+                      <td key={columns[i]} className={changeClass(d >= 0, row.key)}>
                         {`${d >= 0 ? '+' : ''}${num(d, str.locale, unitFree ? 1 : 0)}${unitFree ? ` ${str.fundPp}` : '%'}`}
                       </td>
                     );

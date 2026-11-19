@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { SERIES } from './theme.js';
 import { barPath, scaleOf, sparkline } from './fundFormat.js';
+import { deltaColor, polarityOf } from './fundNotes.js';
 
 // Chart pieces the statement layouts share. Each one owns its own hover state,
 // since nothing outside the chart reacts to it.
@@ -33,13 +34,13 @@ export function Sparkline({ values, width = 84, height = 18, color = SERIES[0], 
   );
 }
 
-function Tooltip({ label, value, delta, deltaUp }) {
+function Tooltip({ label, value, delta, deltaUp, rowKey }) {
   return (
     <div className="stc-fund-tip">
       <div className="stc-fund-tip-label">{label}</div>
       <div className="stc-fund-tip-value">{value}</div>
       {delta && (
-        <div className="stc-fund-tip-delta" style={{ color: deltaUp ? 'var(--up)' : 'var(--down)' }}>
+        <div className="stc-fund-tip-delta" style={{ color: deltaColor(deltaUp, rowKey) }}>
           {delta}
         </div>
       )}
@@ -91,7 +92,22 @@ function useWidth(fallback) {
   return [ref, width];
 }
 
-export function BarChart({ values, columns, format, refValue, height = PLOT_H, width: fallback = PLOT_W, label }) {
+// A bar is coloured only where its sign tells the reader something, and which
+// sign that is depends on the row. On a profit row a negative bar is a loss, so
+// it goes red; on a debt row a negative bar is net cash, so it goes green.
+// Everything else keeps the plain series colour -- a company simply having debt
+// is not a red fact.
+// Bir çubuk yalnız işareti okura bir şey söylüyorsa renklenir, hangi işaret
+// olduğu da satıra bağlı. Kâr satırında negatif çubuk zarardır, kırmızı olur;
+// borç satırında negatif çubuk net nakittir, yeşil olur. Gerisi düz seri
+// rengini koruyor -- şirketin borcu olması kırmızı bir olgu değil.
+function barFill(value, rowKey) {
+  const good = polarityOf(rowKey);
+  if (good == null || value >= 0) return SERIES[0];
+  return good ? 'var(--down)' : 'var(--up)';
+}
+
+export function BarChart({ values, columns, format, refValue, height = PLOT_H, width: fallback = PLOT_W, label, rowKey }) {
   const [hover, setHover] = useState(null);
   const [ref, width] = useWidth(fallback);
   const axis = scaleOf(values, height);
@@ -138,7 +154,7 @@ export function BarChart({ values, columns, format, refValue, height = PLOT_H, w
           if (v == null) return null;
           const x = i * slot + (slot - barWidth) / 2;
           const dim = hover != null && hover !== i;
-          const fill = v < 0 ? 'var(--down)' : SERIES[0];
+          const fill = barFill(v, rowKey);
           return (
             <path
               key={columns[i]}
@@ -164,7 +180,7 @@ export function BarChart({ values, columns, format, refValue, height = PLOT_H, w
           </text>
         ))}
       </svg>
-      {at != null && <Tooltip label={columns[hover]} value={format(at)} delta={delta} deltaUp={deltaUp} />}
+      {at != null && <Tooltip label={columns[hover]} value={format(at)} delta={delta} deltaUp={deltaUp} rowKey={rowKey} />}
     </div>
   );
 }

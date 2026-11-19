@@ -1,5 +1,6 @@
 import { useT } from './i18n.js';
 import { Sparkline } from './FundCharts.jsx';
+import { deltaColor, signClass } from './fundNotes.js';
 import { change, FLAT_SCALE, formatCell, overWindow, rowScale, tintFor } from './fundFormat.js';
 
 const KPI_KEYS = ['3C', 'ebitda', '3Z', 'netDebtEbitda', 'roe'];
@@ -51,7 +52,7 @@ export default function FundTableLayout({ model }) {
                   <span>{scale.suffix}</span>
                 </div>
                 <div className="stc-fund-kpi-foot">
-                  <span style={{ color: delta ? (delta.up ? 'var(--up)' : 'var(--down)') : 'var(--text-dim)' }}>
+                  <span style={{ color: delta ? deltaColor(delta.up, row.key) : 'var(--text-dim)' }}>
                     {delta ? `${delta.text} ${period === 'annual' ? 'y/y' : 'ç/ç'}` : '—'}
                   </span>
                   <Sparkline values={row.values} width={78} height={22} />
@@ -106,7 +107,7 @@ export default function FundTableLayout({ model }) {
                         <td
                           key={columns[i]}
                           className={[
-                            value != null && value < 0 ? 'is-neg' : '',
+                            signClass(value, row.key),
                             yearStarts.has(columns[i]) ? 'is-year-start' : '',
                             halfStarts.has(columns[i]) ? 'is-half-start' : '',
                           ]
@@ -121,14 +122,7 @@ export default function FundTableLayout({ model }) {
                         <Sparkline values={row.values} />
                       </td>
                       <td
-                        style={{
-                          color:
-                            window && window.up != null
-                              ? window.up
-                                ? 'var(--up)'
-                                : 'var(--down)'
-                              : 'var(--text-dim)',
-                        }}
+                        style={{ color: window ? deltaColor(window.up, row.key) : 'var(--text-dim)' }}
                       >
                         {window ? window.text : '—'}
                       </td>

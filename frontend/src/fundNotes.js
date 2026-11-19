@@ -145,3 +145,91 @@ export const RELATED = {
   '4BEB': ['4BE', 'netDebt'],
   netDebtEbitda: ['netDebt', 'ebitda'],
 };
+
+// Which direction is the good one for each row. Without this a chart can only
+// read the sign, and the sign means opposite things on a profit row and a debt
+// row: a negative net debt is net cash, not a loss.
+//
+// `false` means lower is better. `null` means the row has no good direction, so
+// nothing about it gets coloured -- either because the figure is neutral
+// (total assets, export share) or because the same sign arrives two ways. Net
+// Debt / EBITDA is the second kind: it goes negative when net debt is negative
+// (net cash, good) and also when EBITDA is negative (losing money, bad). A
+// wrong green is worse than a grey, so it stays null. A key missing from the
+// map is treated as null.
+//
+// Her satırda iyi olan yön hangisi. Bu olmadan grafik yalnız işarete bakabilir,
+// işaret ise kâr satırıyla borç satırında zıt şey anlatıyor: negatif net borç
+// zarar değil, net nakit.
+//
+// `false` düşük olanın iyi olduğu demek. `null` satırın iyi bir yönü yok demek,
+// o zaman hiçbir şeyi renklenmiyor -- ya rakam nötr olduğu için (toplam
+// varlıklar, ihracat payı) ya da aynı işaret iki ayrı yoldan geldiği için. Net
+// Borç/FAVÖK ikincisi: net borç negatifken de (net nakit, iyi) FAVÖK negatifken
+// de (zarar, kötü) negatife düşüyor. Yanlış bir yeşil griden kötü olduğu için
+// null kalıyor. Haritada olmayan anahtar null sayılıyor.
+const ROW_POLARITY = {
+  '3C': true,
+  '3D': true,
+  '3DF': true,
+  ebitda: true,
+  '3Z': true,
+  grossMargin: true,
+  operatingMargin: true,
+  netMargin: true,
+  roe: true,
+  '1BL': null,
+  '1AA': true,
+  financialDebt: false,
+  netDebt: false,
+  '2N': true,
+  '2O': true,
+  '4C': true,
+  // Reported as an outflow, and spending more is neither good nor bad on its own.
+  // Çıkış olarak raporlanıyor, çok harcamak tek başına ne iyi ne kötü.
+  '4CAI': null,
+  '4CB': true,
+  '4CBB': null,
+  '4BC': true,
+  '4BD': true,
+  exportShare: null,
+  // A short FX position is what a falling lira hurts, so a bigger one is better.
+  // Kısa döviz pozisyonu düşen liranın vurduğu yer, yani büyüğü daha iyi.
+  '4BE': true,
+  '4BEB': true,
+  netDebtEbitda: null,
+};
+
+export function polarityOf(key) {
+  const value = ROW_POLARITY[key];
+  return value === undefined ? null : value;
+}
+
+// Turns a rise or fall into a colour, given the row's direction: the same +12%
+// is green on revenue and red on net debt, and grey where there is no good
+// direction.
+// Bir artışı ya da düşüşü satırın yönüne göre renge çeviriyor: aynı +%12 ciroda
+// yeşil, net borçta kırmızı, iyi yönü olmayan satırda gri.
+export function deltaColor(up, key) {
+  const good = polarityOf(key);
+  if (good == null || up == null) return 'var(--text-dim)';
+  return up === good ? 'var(--up)' : 'var(--down)';
+}
+
+// The class for a value cell, by the same rule the bars use: mark the sign only
+// where it tells the reader something, and in the direction the row means.
+// Bir değer hücresinin sınıfı, çubukların kullandığı kuralla aynı: işareti
+// yalnız okura bir şey söylediği yerde ve satırın kastettiği yönde işaretle.
+export function signClass(value, key) {
+  const good = polarityOf(key);
+  if (good == null || value == null || value >= 0) return '';
+  return good ? 'is-neg' : 'is-up';
+}
+
+// The class for a change cell: a rise is good only when the row says so.
+// Bir değişim hücresinin sınıfı: artış ancak satır öyle diyorsa iyi.
+export function changeClass(up, key) {
+  const good = polarityOf(key);
+  if (good == null || up == null) return '';
+  return up === good ? 'is-up' : 'is-neg';
+}

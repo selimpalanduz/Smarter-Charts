@@ -4,6 +4,7 @@ import { useT } from './i18n.js';
 import { useBand, useValuation } from './fundApi.js';
 import { BandBar, BarChart, LineChart } from './FundCharts.jsx';
 import { band, bandFromStats, change, FLAT_SCALE, formatCell, num, rowScale } from './fundFormat.js';
+import { deltaColor, signClass } from './fundNotes.js';
 
 const KPI_KEYS = ['3C', 'ebitda', '3Z', 'netMargin'];
 const MARGIN_KEYS = ['grossMargin', 'operatingMargin', 'netMargin'];
@@ -262,7 +263,7 @@ export default function FundBoardLayout({ model, summary, symbol }) {
                   </div>
                   <div
                     className="stc-fund-kpi-foot"
-                    style={{ color: delta ? (delta.up ? 'var(--up)' : 'var(--down)') : 'var(--text-dim)' }}
+                    style={{ color: delta ? deltaColor(delta.up, row.key) : 'var(--text-dim)' }}
                   >
                     <span>{delta ? `${delta.text} ${period === 'annual' ? 'y/y' : 'ç/ç'}` : '—'}</span>
                   </div>
@@ -285,6 +286,7 @@ export default function FundBoardLayout({ model, summary, symbol }) {
                 columns={columns}
                 format={format}
                 refValue={reference}
+                rowKey={row.key}
                 label={`${labelOf(row, str)} — ${columns[0]} → ${columns[columns.length - 1]}`}
               />
             </div>
@@ -342,7 +344,7 @@ export default function FundBoardLayout({ model, summary, symbol }) {
                               {scale.suffix && <span className="is-unit">{scale.suffix}</span>}
                             </th>
                             {row.values.map((value, i) => (
-                              <td key={columns[i]} className={value != null && value < 0 ? 'is-neg' : ''}>
+                              <td key={columns[i]} className={signClass(value, row.key)}>
                                 {formatCell(value, row.unit, scale, str.locale)}
                               </td>
                             ))}
