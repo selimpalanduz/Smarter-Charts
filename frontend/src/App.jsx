@@ -3187,6 +3187,36 @@ function App() {
             gap: 2px;
             margin-top: 8px;
           }
+          /* A widget's own title row, used as its fold handle: it has to
+             look exactly like the plain title next to it, so no button chrome. */
+          /* Widget'in kendi başlık satırı, katlama kolu olarak: yanındaki düz
+             başlıkla birebir aynı görünmesi gerek, bu yüzden düğme kabuğu yok. */
+          .stc-panel-fold {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0;
+            font: inherit;
+            text-align: left;
+            color: inherit;
+            background: none;
+            border: none;
+            cursor: pointer;
+          }
+          .stc-panel-fold:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+            border-radius: 2px;
+          }
+          .stc-panel-fold .stc-fold-chevron {
+            color: var(--text-dim);
+            border-left-width: 5px;
+            border-top-width: 4px;
+            border-bottom-width: 4px;
+          }
+          .stc-panel-fold:hover .stc-fold-chevron {
+            color: var(--text-strong);
+          }
           @media (prefers-reduced-motion: reduce) {
             .stc-fold-chevron { transition: none; }
           }

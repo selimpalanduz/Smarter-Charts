@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { API_BASE } from './config.js';
 import { useT } from './i18n.js';
 
-function formatRvol(value) {
-  return value == null ? '-' : value.toFixed(2);
+function formatNum(value, locale) {
+  if (value == null) return '-';
+  return value.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-const cell = { padding: '6px 8px', textAlign: 'right' };
+const cell = { padding: '6px 8px', textAlign: 'right', whiteSpace: 'nowrap' };
 const firstCell = { ...cell, textAlign: 'left' };
 
 function VolumeScanWidget({ onSelectSymbol }) {
@@ -36,7 +37,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
   const visibleRows = onlyBreakouts ? results.filter((r) => r.Breakout != null) : results;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flexGrow: 1, minHeight: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="stc-panel-title">{t.volumeScan}</span>
         <button className="stc-btn" onClick={() => loadScan(hasScanned)} disabled={loading}>
@@ -56,7 +57,7 @@ function VolumeScanWidget({ onSelectSymbol }) {
       )}
 
       {hasScanned && (
-        <div style={{ overflowY: 'auto', flexGrow: 1, minHeight: 0, border: '1px solid var(--panel-border)', borderRadius: '3px' }}>
+        <div style={{ overflowY: 'auto', maxHeight: '420px', border: '1px solid var(--panel-border)', borderRadius: '3px' }}>
           <table style={{ width: '100%', fontSize: '12.5px', borderCollapse: 'collapse' }}>
             <thead>
               <tr className="stc-mono" style={{ color: 'var(--text-dim)', fontSize: '11px', position: 'sticky', top: 0, background: 'var(--panel-bg)' }}>
@@ -70,10 +71,10 @@ function VolumeScanWidget({ onSelectSymbol }) {
               {visibleRows.map((row) => (
                 <tr key={row.Symbol} className="stc-row" onClick={() => onSelectSymbol(row.Symbol)}>
                   <td style={{ ...firstCell, color: 'var(--text-strong)', fontWeight: 600 }}>{row.Symbol}</td>
-                  <td style={cell}>{formatRvol(row.RVOL)}</td>
-                  <td style={cell}>{row.Close}</td>
+                  <td style={cell}>{formatNum(row.RVOL, t.locale)}</td>
+                  <td style={cell}>{formatNum(row.Close, t.locale)}</td>
                   <td style={{ ...cell, color: row.Breakout != null ? 'var(--up)' : 'var(--text-dim)' }}>
-                    {row.Breakout != null ? `↑ ${row.Breakout}` : '-'}
+                    {row.Breakout != null ? `↑ ${formatNum(row.Breakout, t.locale)}` : '-'}
                   </td>
                 </tr>
               ))}

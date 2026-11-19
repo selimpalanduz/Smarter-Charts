@@ -132,10 +132,15 @@ function High52View({ results, onSelectSymbol }) {
   );
 }
 
+// Folded shut by default, like the psychological levels above it. The polling
+// keeps running while shut, so an open fold is never waiting on a first read.
+// Üstündeki psikolojik seviyeler gibi varsayılan kapalı. Yoklama kapalıyken de
+// sürüyor, yani katlama açıldığında ilk okumayı beklemiyor.
 function AnchorScanWidget({ onSelectSymbol }) {
   const [scan, setScan] = useState(null);
   const [error, setError] = useState(null);
   const [view, setView] = useState('round');
+  const [open, setOpen] = useState(false);
   const timerRef = useRef(null);
   const t = useT();
 
@@ -165,25 +170,43 @@ function AnchorScanWidget({ onSelectSymbol }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="stc-panel-title">{t.anchorScanTitle}</span>
-        <button className="stc-btn" onClick={() => load(true)} disabled={!scan || running}>
+        <button className="stc-panel-fold" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          <span className={`stc-fold-chevron ${open ? 'is-open' : ''}`} aria-hidden="true" />
+          <span className="stc-panel-title">{t.anchorScanTitle}</span>
+        </button>
+        {/* Starting a scan opens the fold: otherwise it would run with its
+            results out of sight. */}
+        {/* Tarama başlatmak katlamayı açıyor: yoksa sonuçları görünmezken
+            çalışırdı. */}
+        <button
+          className="stc-btn"
+          onClick={() => {
+            setOpen(true);
+            load(true);
+          }}
+          disabled={!scan || running}
+        >
           {running ? t.anchorScanProgress(scan.done, scan.total) : results.length ? t.refresh : t.scan}
         </button>
       </div>
 
-      <div className="stc-seg" role="group" style={{ alignSelf: 'flex-start' }}>
-        {VIEWS.map((id) => (
-          <button key={id} className={view === id ? 'is-active' : ''} aria-pressed={view === id} onClick={() => setView(id)}>
-            {t.anchorScanViews[id]}
-          </button>
-        ))}
-      </div>
+      {open && (
+        <>
+          <div className="stc-seg" role="group" style={{ alignSelf: 'flex-start' }}>
+            {VIEWS.map((id) => (
+              <button key={id} className={view === id ? 'is-active' : ''} aria-pressed={view === id} onClick={() => setView(id)}>
+                {t.anchorScanViews[id]}
+              </button>
+            ))}
+          </div>
 
-      {error && <span style={{ color: 'var(--down)', fontSize: '12px' }}>{error}</span>}
-      {scan?.updatedAt && <span style={{ fontSize: '12.5px', color: 'var(--text-faint)' }}>{t.anchorScanUpdated(scan.updatedAt)}</span>}
-      {scan && !results.length && !running && <span className="stc-muted">{t.anchorScanHint}</span>}
+          {error && <span style={{ color: 'var(--down)', fontSize: '12px' }}>{error}</span>}
+          {scan?.updatedAt && <span style={{ fontSize: '12.5px', color: 'var(--text-faint)' }}>{t.anchorScanUpdated(scan.updatedAt)}</span>}
+          {scan && !results.length && !running && <span className="stc-muted">{t.anchorScanHint}</span>}
 
-      {results.length > 0 && <View results={results} onSelectSymbol={onSelectSymbol} />}
+          {results.length > 0 && <View results={results} onSelectSymbol={onSelectSymbol} />}
+        </>
+      )}
     </div>
   );
 }

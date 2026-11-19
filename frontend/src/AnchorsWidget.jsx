@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useT } from './i18n.js';
 
 // Below this many tests a hold rate says little.
@@ -77,13 +78,28 @@ function RoundEffect({ effect }) {
   );
 }
 
+// Folded shut by default: the Scan tab holds four widgets, and this one is the
+// tallest of them.
+// Varsayılan kapalı: Tara sekmesinde dört widget var, en uzunu bu.
 function AnchorsWidget({ data }) {
+  const [open, setOpen] = useState(false);
   const t = useT();
+
+  const head = (
+    <button className="stc-panel-fold" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <span className={`stc-fold-chevron ${open ? 'is-open' : ''}`} aria-hidden="true" />
+      <span className="stc-panel-title">{t.anchorsTitle}</span>
+    </button>
+  );
+
+  if (!open) {
+    return <div style={{ display: 'flex', flexDirection: 'column' }}>{head}</div>;
+  }
 
   if (!data) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <span className="stc-panel-title">{t.anchorsTitle}</span>
+        {head}
         <p className="stc-muted">{t.anchorsLoading}</p>
       </div>
     );
@@ -92,7 +108,7 @@ function AnchorsWidget({ data }) {
   if (!data.price) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <span className="stc-panel-title">{t.anchorsTitle}</span>
+        {head}
         <p className="stc-muted">{t.anchorsNoData}</p>
       </div>
     );
@@ -100,7 +116,7 @@ function AnchorsWidget({ data }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-      <span className="stc-panel-title">{t.anchorsTitle}</span>
+      {head}
       <span className="stc-prose">{t.anchorsIntro}</span>
 
       <div
